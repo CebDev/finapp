@@ -92,54 +92,89 @@ struct PeriodProgressChart: View {
         return maxVal * 1.10
     }
 
-    /// Couleur principale du graphique basée sur le solde final.
-    private var chartColor: Color {
-        guard let finalBalance = steps.last?.balance else { return greenColor }
-        if finalBalance < 0              { return softRedColor }
-        if finalBalance < tightThreshold { return amberColor }
+    /// Couleur pour un solde précis (utilisée sur les points).
+    private func colorFor(balance: Decimal) -> Color {
+        if balance < 0              { return softRedColor }
+        if balance < tightThreshold { return amberColor }
         return greenColor
     }
 
-    /// Même logique mais déterminée sur le solde minimum (pour détecter une période à risque).
-    private var worstCaseColor: Color {
-        let minBalance = steps.map(\.balance).min() ?? 0
-        if minBalance < 0              { return softRedColor }
-        if minBalance < tightThreshold { return amberColor }
-        return greenColor
+    /// Gradient vertical vert → amber → rouge selon les seuils sur le domaine Y du graphique.
+    /// `opaque: true`  → ligne (couleurs pleines)
+    /// `opaque: false` → aire (couleurs atténuées, fondues vers le bas)
+    private func makeGradient(opaque: Bool) -> LinearGradient {
+        let range = yMax - yMin
+        let t = (tightThreshold as NSDecimalNumber).doubleValue
+
+        func pos(_ v: Double) -> CGFloat { CGFloat(max(0, min(1, (yMax - v) / range))) }
+        func stop(_ c: Color, _ alpha: Double, _ loc: CGFloat) -> Gradient.Stop {
+            .init(color: opaque ? c : c.opacity(alpha), location: loc)
+        }
+
+        guard range > 0.01 else {
+            let c: Color = yMax < 0 ? softRedColor : yMax < t ? amberColor : greenColor
+            return LinearGradient(
+                stops: [stop(c, 0.30, 0), stop(c, opaque ? 1.0 : 0.04, 1)],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+
+        let tPos    = pos(t)
+        let zeroPos = pos(0.0)
+        var stops: [Gradient.Stop] = []
+
+        // Haut du graphique → seuil tight
+        if yMax >= t {
+            stops.append(stop(greenColor, 0.30, 0))
+            if tPos > 0.01 {
+                stops.append(stop(greenColor,  0.18, max(0, tPos - 0.005)))
+                stops.append(stop(amberColor,  0.28, tPos))
+            }
+        } else if yMax >= 0 {
+            stops.append(stop(amberColor, 0.28, 0))
+        } else {
+            stops.append(stop(softRedColor, 0.30, 0))
+        }
+
+        // Franchissement de zéro (solde qui passe en négatif)
+        if yMin < 0 && yMax > 0 && zeroPos > 0.01 && zeroPos < 0.99 {
+            stops.append(stop(amberColor,   0.18, max(0, zeroPos - 0.005)))
+            stops.append(stop(softRedColor, 0.35, zeroPos))
+            stops.append(stop(softRedColor, 0.08, 1.0))
+        } else {
+            let bot: Color = yMin < 0 ? softRedColor : yMin < t ? amberColor : greenColor
+            stops.append(stop(bot, opaque ? 1.0 : 0.04, 1.0))
+        }
+
+        return LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
     }
 
     // MARK: - Body
 
     var body: some View {
         Chart {
-            // Zone remplie
+            // Zone remplie — gradient vert/amber/rouge selon seuils Y
             ForEach(steps) { step in
                 AreaMark(
                     x: .value("Date", step.date),
                     y: .value("Solde", step.balance)
                 )
                 .interpolationMethod(.catmullRom)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [worstCaseColor.opacity(0.25), worstCaseColor.opacity(0.04)],
-                        startPoint: .top,
-                        endPoint:   .bottom
-                    )
-                )
+                .foregroundStyle(makeGradient(opaque: false))
             }
 
-            // Ligne principale
+            // Ligne principale — même gradient, couleurs pleines
             ForEach(steps) { step in
                 LineMark(
                     x: .value("Date", step.date),
                     y: .value("Solde", step.balance)
                 )
                 .interpolationMethod(.catmullRom)
-                .foregroundStyle(worstCaseColor)
+                .foregroundStyle(makeGradient(opaque: true))
                 .lineStyle(StrokeStyle(lineWidth: 2))
             }
 
-            // Point de départ
+            // Point de départ — couleur selon son propre solde
             if let first = steps.first {
                 PointMark(
                     x: .value("Date", first.date),
@@ -152,11 +187,11 @@ struct PeriodProgressChart: View {
                     x: .value("Date", first.date),
                     y: .value("Solde", first.balance)
                 )
-                .foregroundStyle(worstCaseColor)
+                .foregroundStyle(colorFor(balance: first.balance))
                 .symbolSize(16)
             }
 
-            // Point final
+            // Point final — couleur selon son propre solde
             if let last = steps.last, steps.count > 1 {
                 PointMark(
                     x: .value("Date", last.date),
@@ -169,7 +204,7 @@ struct PeriodProgressChart: View {
                     x: .value("Date", last.date),
                     y: .value("Solde", last.balance)
                 )
-                .foregroundStyle(worstCaseColor)
+                .foregroundStyle(colorFor(balance: last.balance))
                 .symbolSize(28)
             }
 
