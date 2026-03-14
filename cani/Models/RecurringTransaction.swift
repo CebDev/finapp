@@ -25,6 +25,10 @@ class RecurringTransaction {
     var isSubscription: Bool = false
     var logo: String = ""
     var notes: String? = nil
+    /// Vrai si la récurrence est un transfert entre comptes
+    var isTransfer: Bool = false
+    /// UUID du compte de destination pour un transfert (nil si non-transfert)
+    var transferDestinationAccountId: UUID? = nil
 
     init(
         id: UUID = UUID(),
@@ -40,7 +44,9 @@ class RecurringTransaction {
         categoryId: UUID? = nil,
         isSubscription: Bool = false,
         logo: String = "",
-        notes: String? = nil
+        notes: String? = nil,
+        isTransfer: Bool = false,
+        transferDestinationAccountId: UUID? = nil
     ) {
         self.id = id
         self.accountId = accountId
@@ -56,5 +62,7 @@ class RecurringTransaction {
         self.isSubscription = isSubscription
         self.logo = logo
         self.notes = notes
+        self.isTransfer = isTransfer
+        self.transferDestinationAccountId = transferDestinationAccountId
     }
 }

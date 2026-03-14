@@ -12,8 +12,17 @@ struct UpcomingOperationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Icône catégorie — fallback gris si non catégorisée
-            if let cat = operation.category {
+            // Icône : checkmark vert si payé, sinon badge catégorie normal
+            if operation.isPaid {
+                ZStack {
+                    Circle()
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(Color.green)
+                }
+            } else if let cat = operation.category {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
                 ZStack {
@@ -29,20 +38,31 @@ struct UpcomingOperationRow: View {
             // Nom + date relative
             VStack(alignment: .leading, spacing: 2) {
                 Text(operation.name)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.primary)
+                    .font(operation.isPaid ? .system(size: 15).italic() : .system(size: 15))
+                    .foregroundStyle(operation.isPaid ? Color.secondary : Color.primary)
                     .lineLimit(1)
-                Text(relativeDateLabel(operation.date))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(relativeDateLabel(operation.date))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    if operation.isPaid {
+                        Text("· payée")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.green)
+                    }
+                }
             }
 
             Spacer()
 
             // Montant
             Text(amountLabel)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(operation.recurringTransaction.isIncome ? Color.green : Color.orange)
+                .font(operation.isPaid
+                      ? .subheadline.weight(.semibold).italic()
+                      : .subheadline.weight(.semibold))
+                .foregroundStyle(operation.isPaid
+                                 ? Color.secondary
+                                 : (operation.recurringTransaction.isIncome ? Color.green : Color.orange))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)

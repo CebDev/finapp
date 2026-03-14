@@ -65,7 +65,7 @@ struct SettingsView: View {
                 case .general:
                     ComingSoonView(titleKey: "settings.row.general")
                 case .profile:
-                    ComingSoonView(titleKey: "settings.row.profile")
+                    ProfileView()
                 }
             }
         }

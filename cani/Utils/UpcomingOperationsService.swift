@@ -16,6 +16,7 @@ struct UpcomingOperation: Identifiable {
     let date: Date
     let category: Category?
     let recurringTransaction: RecurringTransaction
+    var isPaid: Bool = false
 }
 
 // MARK: - UpcomingOperationsService
@@ -31,9 +32,10 @@ enum UpcomingOperationsService {
         _ count: Int,
         from recurring: [RecurringTransaction],
         categories: [Category] = [],
+        overrides: [TransactionOverride] = [],
         after: Date = .now
     ) -> [UpcomingOperation] {
-        let calendar   = Calendar.current
+        let calendar    = Calendar.current
         let windowStart = calendar.startOfDay(for: after)
         guard let windowEnd = calendar.date(byAdding: .day, value: 60, to: windowStart) else { return [] }
 
@@ -45,14 +47,23 @@ enum UpcomingOperationsService {
             )
             guard let first = occs.first else { continue }
 
+            let normalizedFirst = calendar.startOfDay(for: first)
+            let override = overrides.first {
+                $0.recurringTransactionId == tx.id &&
+                calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedFirst)
+            }
+            let effectiveAmount = override?.actualAmount ?? tx.amount
+            let isPaid          = override?.isPaid == true
+
             let cat = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
             ops.append(UpcomingOperation(
                 id:                   UUID(),
                 name:                 tx.name,
-                amount:               tx.amount,
+                amount:               effectiveAmount,
                 date:                 first,
                 category:             cat,
-                recurringTransaction: tx
+                recurringTransaction: tx,
+                isPaid:               isPaid
             ))
         }
 

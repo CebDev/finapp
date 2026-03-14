@@ -13,46 +13,50 @@ enum CategoryService {
     // MARK: - Default categories
 
     /// Retourne l'ensemble des catégories système (racines + sous-catégories).
-    /// Les UUIDs sont déterministes pour garantir la stabilité entre les seeds.
+    /// Tous les UUIDs sont déterministes : seed idempotent garanti.
     static func defaultCategories() -> [Category] {
         var result: [Category] = []
         var order = 0
 
-        // Helper pour créer un parent + ses enfants d'un coup
+        /// Crée un parent + ses enfants avec UUIDs déterministes.
+        /// UUID parent : `{ns}-0000-0000-0000-000000000000`
+        /// UUID enfant i : `{ns}-{i+1:04X}-0000-0000-000000000000`
         func makeGroup(
-            id: UUID,
+            ns: String,         // ex: "00000001"
             name: String,
             icon: String,
             color: String,
             children: [(name: String, icon: String)]
         ) {
-            let parent = Category(
-                id: id,
+            let parentId = UUID(uuidString: "\(ns)-0000-0000-0000-000000000000")!
+            result.append(Category(
+                id: parentId,
                 name: name,
                 icon: icon,
                 color: color,
                 parentId: nil,
                 isSystem: true,
                 sortOrder: order
-            )
-            result.append(parent)
+            ))
             order += 1
 
-            for (childIndex, child) in children.enumerated() {
+            for (i, child) in children.enumerated() {
+                let childId = UUID(uuidString: "\(ns)-\(String(format: "%04X", i + 1))-0000-0000-000000000000")!
                 result.append(Category(
+                    id: childId,
                     name: child.name,
                     icon: child.icon,
                     color: color,
-                    parentId: id,
+                    parentId: parentId,
                     isSystem: true,
-                    sortOrder: childIndex
+                    sortOrder: i
                 ))
             }
         }
 
         // MARK: 🏠 Logement
         makeGroup(
-            id: UUID(uuidString: "00000001-0000-0000-0000-000000000000")!,
+            ns: "00000001",
             name: "Logement",
             icon: "house.fill",
             color: "#5E5CE6",
@@ -66,7 +70,7 @@ enum CategoryService {
 
         // MARK: 🚗 Transport
         makeGroup(
-            id: UUID(uuidString: "00000002-0000-0000-0000-000000000000")!,
+            ns: "00000002",
             name: "Transport",
             icon: "car.fill",
             color: "#FF9F0A",
@@ -80,7 +84,7 @@ enum CategoryService {
 
         // MARK: 🛒 Alimentation
         makeGroup(
-            id: UUID(uuidString: "00000003-0000-0000-0000-000000000000")!,
+            ns: "00000003",
             name: "Alimentation",
             icon: "cart.fill",
             color: "#30D158",
@@ -93,7 +97,7 @@ enum CategoryService {
 
         // MARK: 💊 Santé
         makeGroup(
-            id: UUID(uuidString: "00000004-0000-0000-0000-000000000000")!,
+            ns: "00000004",
             name: "Santé",
             icon: "heart.fill",
             color: "#FF375F",
@@ -105,7 +109,7 @@ enum CategoryService {
 
         // MARK: 🎬 Loisirs
         makeGroup(
-            id: UUID(uuidString: "00000005-0000-0000-0000-000000000000")!,
+            ns: "00000005",
             name: "Loisirs",
             icon: "tv.fill",
             color: "#BF5AF2",
@@ -119,7 +123,7 @@ enum CategoryService {
 
         // MARK: 💼 Revenus
         makeGroup(
-            id: UUID(uuidString: "00000006-0000-0000-0000-000000000000")!,
+            ns: "00000006",
             name: "Revenus",
             icon: "arrow.down.circle.fill",
             color: "#32D74B",
@@ -133,7 +137,7 @@ enum CategoryService {
 
         // MARK: 🎓 Éducation
         makeGroup(
-            id: UUID(uuidString: "00000007-0000-0000-0000-000000000000")!,
+            ns: "00000007",
             name: "Éducation",
             icon: "book.fill",
             color: "#0A84FF",
@@ -146,7 +150,7 @@ enum CategoryService {
 
         // MARK: 🏦 Finances
         makeGroup(
-            id: UUID(uuidString: "00000008-0000-0000-0000-000000000000")!,
+            ns: "00000008",
             name: "Finances",
             icon: "chart.pie.fill",
             color: "#FFD60A",
@@ -174,14 +178,20 @@ enum CategoryService {
 
     // MARK: - Seed
 
-    /// Insère les catégories par défaut si aucune catégorie n'existe encore dans le contexte.
+    /// Insère les catégories par défaut si elles ne sont pas encore présentes.
+    /// La garde est basée sur l'UUID pivot de "Logement" (déterministe) — insensible
+    /// aux races CloudKit et aux relances multiples.
     static func seedIfNeeded(context: ModelContext) {
-        let descriptor = FetchDescriptor<Category>()
-        let count = (try? context.fetchCount(descriptor)) ?? 0
-        guard count == 0 else { return }
+        let pivotId = UUID(uuidString: "00000001-0000-0000-0000-000000000000")!
+        let descriptor = FetchDescriptor<Category>(
+            predicate: #Predicate { $0.id == pivotId }
+        )
+        let alreadySeeded = (try? context.fetchCount(descriptor)) ?? 0
+        guard alreadySeeded == 0 else { return }
 
         for category in defaultCategories() {
             context.insert(category)
         }
+        try? context.save()
     }
 }

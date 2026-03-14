@@ -22,15 +22,24 @@ struct BalanceChartView: View {
     /// Quand fourni, remplace le `previousBalance` de la période focalisée dans le premier point
     /// de la courbe — utilisé par PeriodDetailSheet en mode « vue isolée » (carryForwardBalance = false).
     var overridePreviousBalance: Decimal? = nil
+    /// Seuil en dessous duquel une période est « serrée » (amber). Défaut : 500 $ CAD.
+    var tightThreshold: Decimal = 500
+
+    // MARK: - Couleurs d'état
+
+    private var softRedColor: Color { Color(red: 0.85, green: 0.28, blue: 0.28) }
+    private var amberColor:   Color { Color(red: 1.0,  green: 0.70, blue: 0.0)  }
 
     // MARK: - Données graphique
 
     /// Un point de données = solde à un instant précis dans le temps.
     private struct ChartPoint: Identifiable {
-        let id:      Date   // stable — pas de UUID recréé à chaque render
-        let date:    Date
-        let balance: Double
-        let isTight: Bool
+        let id:           Date   // stable — pas de UUID recréé à chaque render
+        let date:         Date
+        let balance:      Double
+        let isTight:      Bool
+        let isNegative:   Bool
+        let isEndOfPeriod: Bool  // vrai sur les points de fin de période (pour les dots)
     }
 
     /// Périodes visibles selon le mode actif.
@@ -59,10 +68,10 @@ struct BalanceChartView: View {
         guard !shown.isEmpty else { return [] }
 
         var pts: [ChartPoint] = []
+        let thresholdDouble = Double(NSDecimalNumber(decimal: tightThreshold).doubleValue)
 
         for period in shown {
             // Début de période : solde avant les transactions
-            // Si overridePreviousBalance est fourni et que c'est la période focalisée, on l'utilise.
             let startBalance: Double
             if let override = overridePreviousBalance,
                let focused = focusedPeriod,
@@ -72,17 +81,22 @@ struct BalanceChartView: View {
                 startBalance = (period.previousBalance as NSDecimalNumber).doubleValue
             }
             pts.append(ChartPoint(
-                id:      period.startDate,
-                date:    period.startDate,
-                balance: startBalance,
-                isTight: false
+                id:            period.startDate,
+                date:          period.startDate,
+                balance:       startBalance,
+                isTight:       startBalance < thresholdDouble && startBalance >= 0,
+                isNegative:    startBalance < 0,
+                isEndOfPeriod: false
             ))
             // Fin de période : solde après les transactions
+            let endBalance = (period.projectedBalance as NSDecimalNumber).doubleValue
             pts.append(ChartPoint(
-                id:      period.endDate,
-                date:    period.endDate,
-                balance: (period.projectedBalance as NSDecimalNumber).doubleValue,
-                isTight: period.isTight
+                id:            period.endDate,
+                date:          period.endDate,
+                balance:       endBalance,
+                isTight:       endBalance < thresholdDouble && endBalance >= 0,
+                isNegative:    endBalance < 0,
+                isEndOfPeriod: true
             ))
         }
 
@@ -106,7 +120,7 @@ struct BalanceChartView: View {
         return Date.distantPast...Date.distantFuture
     }
 
-    private var tightPoints: [ChartPoint] { chartPoints.filter(\.isTight) }
+    private var endPoints: [ChartPoint] { chartPoints.filter(\.isEndOfPeriod) }
 
     private var yRange: (min: Double, max: Double) {
         let vals = chartPoints.map(\.balance)
@@ -140,10 +154,69 @@ struct BalanceChartView: View {
             focusedHighlight()
             areaMarks()
             lineMarks()
-            tightPointMarks()
+            statusPointMarks()
             todayRule()
         }
         .chartXAxis { xAxisContent }
+    }
+
+    // MARK: - Gradient vert / amber / rouge
+
+    /// Calcule les stops du gradient Y mappé sur le domaine des données.
+    /// `opaque: true`  → ligne (couleurs pleines)
+    /// `opaque: false` → aire (couleurs opaques réduites, fondues vers le bas)
+    private func makeGradientStops(opaque: Bool) -> [Gradient.Stop] {
+        let (yMin, yMax) = yRange
+        let range = yMax - yMin
+        let t = Double(NSDecimalNumber(decimal: tightThreshold).doubleValue)
+
+        // Position 0 = haut du graphique (yMax), 1 = bas (yMin)
+        func pos(_ v: Double) -> CGFloat { CGFloat(max(0, min(1, (yMax - v) / range))) }
+        func stop(_ c: Color, _ alpha: Double, _ loc: CGFloat) -> Gradient.Stop {
+            .init(color: opaque ? c : c.opacity(alpha), location: loc)
+        }
+
+        guard range > 0.01 else {
+            let c: Color = yMax < 0 ? softRedColor : yMax < t ? amberColor : .green
+            return [stop(c, 0.30, 0), stop(c, opaque ? 1.0 : 0.04, 1)]
+        }
+
+        let tPos    = pos(t)
+        let zeroPos = pos(0.0)
+        var stops: [Gradient.Stop] = []
+
+        // Haut → seuil tight
+        if yMax >= t {
+            stops.append(stop(.green,    0.30, 0))
+            if tPos > 0.01 {
+                stops.append(stop(.green,     0.18, max(0, tPos - 0.005)))
+                stops.append(stop(amberColor, 0.28, tPos))
+            }
+        } else if yMax >= 0 {
+            stops.append(stop(amberColor, 0.28, 0))
+        } else {
+            stops.append(stop(softRedColor, 0.30, 0))
+        }
+
+        // Franchissement de zéro
+        if yMin < 0 && yMax > 0 && zeroPos > 0.01 && zeroPos < 0.99 {
+            stops.append(stop(amberColor,   0.18, max(0, zeroPos - 0.005)))
+            stops.append(stop(softRedColor, 0.35, zeroPos))
+            stops.append(stop(softRedColor, 0.08, 1.0))
+        } else {
+            let bot: Color = yMin < 0 ? softRedColor : yMin < t ? amberColor : .green
+            stops.append(stop(bot, opaque ? 1.0 : 0.04, 1.0))
+        }
+
+        return stops
+    }
+
+    private func areaGradient() -> LinearGradient {
+        LinearGradient(stops: makeGradientStops(opaque: false), startPoint: .top, endPoint: .bottom)
+    }
+
+    private func lineGradient() -> LinearGradient {
+        LinearGradient(stops: makeGradientStops(opaque: true), startPoint: .top, endPoint: .bottom)
     }
 
     // MARK: - Chart content builders
@@ -172,13 +245,7 @@ struct BalanceChartView: View {
                 y: .value("Solde", pt.balance)
             )
             .interpolationMethod(.monotone)
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [Color.indigo.opacity(0.28), Color.indigo.opacity(0.04)],
-                    startPoint: .top,
-                    endPoint:   .bottom
-                )
-            )
+            .foregroundStyle(areaGradient())
         }
     }
 
@@ -190,20 +257,21 @@ struct BalanceChartView: View {
                 y: .value("Solde", pt.balance)
             )
             .interpolationMethod(.monotone)
-            .foregroundStyle(Color.indigo)
+            .foregroundStyle(lineGradient())
             .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
         }
     }
 
     @ChartContentBuilder
-    private func tightPointMarks() -> some ChartContent {
-        ForEach(tightPoints) { pt in
+    private func statusPointMarks() -> some ChartContent {
+        ForEach(endPoints) { pt in
+            let dotColor: Color = pt.isNegative ? softRedColor : pt.isTight ? amberColor : .green
             PointMark(
                 x: .value("Date",  pt.date),
                 y: .value("Solde", pt.balance)
             )
-            .foregroundStyle(Color.orange)
-            .symbolSize(55)
+            .foregroundStyle(dotColor)
+            .symbolSize(45)
             .symbol(.circle)
         }
     }

@@ -14,36 +14,51 @@ struct PeriodDetailSheet: View {
     /// Quand false, le header affiche un solde recalculé isolément (revenus − dépenses)
     /// et le graphique démarre à zéro, sans report du solde précédent.
     var carryForwardBalance: Bool = true
+    var tightThreshold:     Decimal = 500
 
-    @Query(sort: \Category.sortOrder) private var allCategories: [Category]
+    @Query(sort: \Category.sortOrder) private var allCategories:  [Category]
     @Query                            private var allTransactions: [Transaction]
+    @Query                            private var allOverrides:    [TransactionOverride]
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingEditChoice  = false
-    @State private var editChoiceTarget:  RecurringTransaction? = nil
-    @State private var editingRecurring:  RecurringTransaction? = nil
-    @State private var editingOccurrence: RecurringTransaction? = nil
+    @State private var showingEditChoice:        Bool                  = false
+    @State private var editChoiceTarget:         RecurringTransaction? = nil
+    @State private var editChoiceOccurrenceDate: Date                  = Date()
+    @State private var editingRecurring:         RecurringTransaction? = nil
+    @State private var editingOccurrence:        RecurringTransaction? = nil
+    @State private var markingAsPaid:            RecurringTransaction? = nil
+    @State private var markingAsPaidDate:        Date                  = Date()
 
     // MARK: - Computed
 
-    private var incomeTransactions: [RecurringTransaction] {
-        period.transactions
-            .filter(\.isIncome)
-            .sorted { abs($0.amount) > abs($1.amount) }
+    /// Une entrée par occurrence (pas par récurrence) — c'est le fix du bug d'affichage.
+    private struct SortedEntry: Identifiable {
+        let id:   UUID
+        let tx:   RecurringTransaction
+        let date: Date
     }
 
-    private var expenseTransactions: [RecurringTransaction] {
-        period.transactions
-            .filter { !$0.isIncome }
-            .sorted { abs($0.amount) > abs($1.amount) }
+    private var sortedTransactions: [SortedEntry] {
+        let cal          = Calendar.current
+        let exclusiveEnd = cal.date(byAdding: .day, value: 1, to: period.endDate) ?? period.endDate
+        return period.transactions
+            .flatMap { tx -> [SortedEntry] in
+                ProjectionEngine.occurrences(of: tx, from: period.startDate, to: exclusiveEnd, calendar: cal)
+                    .map { SortedEntry(id: UUID(), tx: tx, date: $0) }
+            }
+            .sorted { $0.date < $1.date }
     }
 
     private var totalIncome: Decimal {
-        incomeTransactions.reduce(0) { $0 + abs(effectiveAmount(for: $1)) }
+        sortedTransactions
+            .filter { $0.tx.isIncome }
+            .reduce(0) { $0 + abs(effectiveAmount(for: $1.tx, at: $1.date)) }
     }
 
     private var totalExpenses: Decimal {
-        expenseTransactions.reduce(0) { $0 + abs(effectiveAmount(for: $1)) }
+        sortedTransactions
+            .filter { !$0.tx.isIncome }
+            .reduce(0) { $0 + abs(effectiveAmount(for: $1.tx, at: $1.date)) }
     }
 
     private func category(for tx: RecurringTransaction) -> Category? {
@@ -51,25 +66,35 @@ struct PeriodDetailSheet: View {
         return allCategories.first { $0.id == id }
     }
 
-    /// Retourne le Transaction d'override pour une occurrence dans la période courante, s'il existe.
-    private func occurrenceOverride(for tx: RecurringTransaction) -> Transaction? {
-        allTransactions.first {
+    /// Retourne le Transaction d'override pour une occurrence précise, s'il existe.
+    private func occurrenceOverride(for tx: RecurringTransaction, at occDate: Date) -> Transaction? {
+        let cal = Calendar.current
+        return allTransactions.first {
             $0.recurringTransactionId == tx.id &&
-            $0.date >= period.startDate &&
-            $0.date <= period.endDate
+            cal.isDate($0.date, inSameDayAs: occDate)
         }
     }
 
     /// Montant effectif à afficher : override si présent, sinon la règle récurrente.
-    private func effectiveAmount(for tx: RecurringTransaction) -> Decimal {
-        occurrenceOverride(for: tx)?.amount ?? tx.amount
+    private func effectiveAmount(for tx: RecurringTransaction, at occDate: Date) -> Decimal {
+        occurrenceOverride(for: tx, at: occDate)?.amount ?? tx.amount
     }
 
     /// Catégorie effective : override si présent, sinon la règle récurrente.
-    private func effectiveCategory(for tx: RecurringTransaction) -> Category? {
-        let categoryId = occurrenceOverride(for: tx)?.categoryId ?? tx.categoryId
+    private func effectiveCategory(for tx: RecurringTransaction, at occDate: Date) -> Category? {
+        let categoryId = occurrenceOverride(for: tx, at: occDate)?.categoryId ?? tx.categoryId
         guard let id = categoryId else { return nil }
         return allCategories.first { $0.id == id }
+    }
+
+    /// Retourne le TransactionOverride marqué payé pour une occurrence précise, s'il existe.
+    private func paidOverride(for tx: RecurringTransaction, at occDate: Date) -> TransactionOverride? {
+        let cal = Calendar.current
+        return allOverrides.first {
+            $0.recurringTransactionId == tx.id &&
+            $0.isPaid &&
+            cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: cal.startOfDay(for: occDate))
+        }
     }
 
     // MARK: - Mode isolé (carryForwardBalance == false)
@@ -116,12 +141,12 @@ struct PeriodDetailSheet: View {
                         .padding(.top, 12)
                         .padding(.bottom, 8)
 
-                    if !allPeriods.isEmpty {
-                        BalanceChartView(
-                            periods:                 chartPeriods,
-                            showFullYear:            false,
-                            focusedPeriod:           period,
-                            overridePreviousBalance: carryForwardBalance ? nil : 0
+                    if !period.transactions.isEmpty {
+                        PeriodProgressChart(
+                            period:              period,
+                            carryForwardBalance: carryForwardBalance,
+                            tightThreshold:      tightThreshold,
+                            overrides:           allOverrides
                         )
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
@@ -133,22 +158,13 @@ struct PeriodDetailSheet: View {
                             .padding(.bottom, 12)
                     }
 
-                    if !incomeTransactions.isEmpty {
-                        sectionLabel("Revenus")
-                        ForEach(incomeTransactions) { tx in
-                            transactionRow(tx, isIncome: true)
-                        }
-                    }
-
-                    if !expenseTransactions.isEmpty {
-                        sectionLabel("Dépenses")
-                        ForEach(expenseTransactions) { tx in
-                            transactionRow(tx, isIncome: false)
-                        }
-                    }
-
-                    if period.transactions.isEmpty {
+                    if sortedTransactions.isEmpty {
                         emptyState
+                    } else {
+                        sectionLabel("Transactions")
+                        ForEach(sortedTransactions) { entry in
+                            transactionRow(entry.tx, occurrenceDate: entry.date)
+                        }
                     }
 
                     // Espace sous le contenu pour que le footer ne le masque pas
@@ -172,15 +188,21 @@ struct PeriodDetailSheet: View {
                 titleVisibility: .visible
             ) {
                 Button("Modifier toutes les occurrences à venir") {
-                    editingRecurring  = editChoiceTarget
-                    editChoiceTarget  = nil
+                    editingRecurring = editChoiceTarget
+                    editChoiceTarget = nil
                 }
                 Button("Modifier uniquement cette occurrence") {
                     editingOccurrence = editChoiceTarget
                     editChoiceTarget  = nil
                 }
-                Button("Annuler", role: .cancel) {
+                Divider()
+                Button("Marquer comme payé") {
+                    markingAsPaidDate = editChoiceOccurrenceDate
+                    markingAsPaid     = editChoiceTarget
                     editChoiceTarget  = nil
+                }
+                Button("Annuler", role: .cancel) {
+                    editChoiceTarget = nil
                 }
             }
             .sheet(item: $editingRecurring) { tx in
@@ -189,8 +211,11 @@ struct PeriodDetailSheet: View {
             .sheet(item: $editingOccurrence) { tx in
                 AddTransactionView(
                     editingOccurrenceRecurring: tx,
-                    editingOccurrenceDate: occurrenceDate(for: tx)
+                    editingOccurrenceDate:      editChoiceOccurrenceDate
                 )
+            }
+            .sheet(item: $markingAsPaid) { tx in
+                MarkAsPaidSheet(transaction: tx, occurrenceDate: markingAsPaidDate)
             }
         }
         .presentationDetents([.medium, .large])
@@ -259,28 +284,52 @@ struct PeriodDetailSheet: View {
 
     // MARK: - Transaction row
 
-    private func transactionRow(_ tx: RecurringTransaction, isIncome: Bool) -> some View {
-        let cat        = effectiveCategory(for: tx)
-        let amount     = effectiveAmount(for: tx)
-        let isOverride = occurrenceOverride(for: tx) != nil
+    private func transactionRow(_ tx: RecurringTransaction, occurrenceDate occ: Date) -> some View {
+        let cat        = effectiveCategory(for: tx, at: occ)
+        let amount     = effectiveAmount(for: tx, at: occ)
+        let isOverride = occurrenceOverride(for: tx, at: occ) != nil
+        let isPaid     = paidOverride(for: tx, at: occ) != nil
+        let isIncome   = tx.isIncome
         return HStack(spacing: 12) {
-            if let cat {
+            // Icône : checkmark vert si payé, sinon badge catégorie normal
+            if isPaid {
+                ZStack {
+                    Circle()
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(Color.green)
+                }
+            } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
                 CategoryIconBadge(icon: "square.dashed", color: "#98989D", size: 36)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(tx.name)
-                    .font(.body)
+                    .font(isPaid ? .body.italic() : .body)
+                    .foregroundStyle(isPaid ? Color.secondary : Color.primary)
                     .lineLimit(1)
                 HStack(spacing: 4) {
+                    // Date d'occurrence — information principale
+                    Text(shortDate(occ))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(isPaid ? Color.secondary.opacity(0.7) : Color.secondary)
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary.opacity(0.4))
                     Text(tx.frequency.labelFR)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if isOverride {
+                        .foregroundStyle(Color.secondary.opacity(0.7))
+                    if isPaid {
+                        Text("· payée")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.green)
+                    } else if isOverride {
                         Text("· modifiée")
-                            .font(.caption)
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(.indigo)
                     }
                 }
@@ -290,15 +339,17 @@ struct PeriodDetailSheet: View {
 
             HStack(spacing: 8) {
                 Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(amount)))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isIncome ? Color.green : Color.orange)
-                Image(systemName: "pencil")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(isPaid ? .subheadline.weight(.semibold).italic() : .subheadline.weight(.semibold))
+                    .foregroundStyle(isPaid ? Color.secondary : (isIncome ? Color.green : Color.orange))
+                if !isPaid {
+                    Image(systemName: "pencil")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .background(Color(.systemBackground))
         .overlay(
             Divider()
@@ -307,8 +358,9 @@ struct PeriodDetailSheet: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            editChoiceTarget  = tx
-            showingEditChoice = true
+            editChoiceTarget         = tx
+            editChoiceOccurrenceDate = occ
+            showingEditChoice        = true
         }
     }
 
@@ -371,15 +423,6 @@ struct PeriodDetailSheet: View {
     }
 
     // MARK: - Helpers
-
-    /// Retourne la date de la première occurrence de `tx` dans la période courante.
-    private func occurrenceDate(for tx: RecurringTransaction) -> Date {
-        let cal = Calendar.current
-        // period.endDate est inclusif → on ajoute 1 jour pour obtenir la borne exclusive
-        let exclusiveEnd = cal.date(byAdding: .day, value: 1, to: period.endDate) ?? period.endDate
-        return ProjectionEngine.occurrences(of: tx, from: period.startDate, to: exclusiveEnd).first
-            ?? period.startDate
-    }
 
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()

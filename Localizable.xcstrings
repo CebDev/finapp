@@ -10,6 +10,12 @@
     "· modifiée" : {
 
     },
+    "· payée" : {
+
+    },
+    "· récurrence" : {
+
+    },
     "« %@ » sera supprimée. Les transactions passées ne seront pas affectées." : {
 
     },
@@ -29,6 +35,9 @@
 
     },
     "0,00" : {
+
+    },
+    "3 derniers mois · mouvements réels" : {
 
     },
     "500" : {
@@ -763,7 +772,13 @@
     "Annuler" : {
 
     },
+    "Aucun" : {
+
+    },
     "Aucun compte — créez-en un d'abord" : {
+
+    },
+    "Aucun mouvement réel enregistré\nsur les 3 derniers mois." : {
 
     },
     "Aucun revenu récurrent" : {
@@ -784,6 +799,9 @@
     "Aucune période serrée" : {
 
     },
+    "Aucune transaction" : {
+
+    },
     "Aucune transaction planifiée" : {
 
     },
@@ -791,6 +809,9 @@
 
     },
     "Aux deux semaines" : {
+
+    },
+    "CAD" : {
 
     },
     "Catégorie" : {
@@ -952,6 +973,9 @@
     "cette période" : {
 
     },
+    "Choisir un compte" : {
+
+    },
     "Choisir…" : {
 
     },
@@ -1077,16 +1101,25 @@
     "Compte" : {
 
     },
+    "Compte destination" : {
+
+    },
+    "Compte source" : {
+
+    },
+    "Confirmer le paiement" : {
+
+    },
     "Date" : {
 
     },
     "Date de fin" : {
 
     },
-    "Début" : {
+    "Date de paiement" : {
 
     },
-    "Dépense" : {
+    "Début" : {
 
     },
     "Dépenses" : {
@@ -1137,6 +1170,9 @@
 
     },
     "Fréquence de paie" : {
+
+    },
+    "GÉNÉRAL" : {
 
     },
     "home.accounts.see_all" : {
@@ -1335,6 +1371,9 @@
     "Jour du mois" : {
 
     },
+    "Marquer comme payé" : {
+
+    },
     "Mensuel" : {
 
     },
@@ -1356,10 +1395,19 @@
     "Montant invalide" : {
 
     },
+    "MONTANT PAYÉ" : {
+
+    },
     "Nom" : {
 
     },
+    "Note" : {
+
+    },
     "Nouvelle transaction" : {
+
+    },
+    "Optionnelle" : {
 
     },
     "Paie & alertes" : {
@@ -1417,9 +1465,6 @@
 
     },
     "Reprendre le solde précédent" : {
-
-    },
-    "Revenu" : {
 
     },
     "Revenus" : {
@@ -1567,6 +1612,9 @@
         }
       }
     },
+    "Seuil" : {
+
+    },
     "Solde" : {
 
     },
@@ -1686,6 +1734,9 @@
 
     },
     "Vue isolée" : {
+
+    },
+    "Zéro" : {
 
     }
   },

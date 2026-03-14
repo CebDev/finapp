@@ -286,6 +286,17 @@ extension AccountType {
         }
     }
 
+    var labelFR: String {
+        switch self {
+        case .chequing:   return "Compte chèques"
+        case .savings:    return "Épargne"
+        case .credit:     return "Crédit"
+        case .creditCard: return "Carte de crédit"
+        case .mortgage:   return "Hypothèque"
+        case .investment: return "Investissement"
+        }
+    }
+
     var defaultIcon: String {
         switch self {
         case .chequing:   return "banknote"

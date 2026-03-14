@@ -21,7 +21,8 @@ struct caniApp: App {
             Simulation.self,
             SimulationTransaction.self,
             Category.self,
-            UserSettings.self
+            UserSettings.self,
+            TransactionOverride.self
         ])
         // CloudKit désactivé en dev — activer après configuration des entitlements iCloud dans Xcode
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .private("iCloud.cebdev.cani"))

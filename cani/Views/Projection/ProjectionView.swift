@@ -9,9 +9,10 @@ import SwiftUI
 import SwiftData
 
 struct ProjectionView: View {
-    @Query(sort: \Account.createdAt)        private var accounts:      [Account]
+    @Query(sort: \Account.createdAt)         private var accounts:      [Account]
     @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
     @Query                                   private var settingsArray: [UserSettings]
+    @Query                                   private var allOverrides:  [TransactionOverride]
 
     @State private var showTightOnly:  Bool       = false
     @State private var selectedPeriod: PayPeriod? = nil
@@ -27,10 +28,11 @@ struct ProjectionView: View {
     private var allPeriods: [PayPeriod] {
         guard let s = settings else { return [] }
         return PeriodEngine.generate(
-            settings:      s,
-            accounts:      accounts,
-            recurring:     recurring,
-            count:         13
+            settings:  s,
+            accounts:  accounts,
+            recurring: recurring,
+            count:     13,
+            overrides: allOverrides
         )
     }
 
@@ -83,7 +85,8 @@ struct ProjectionView: View {
                 PeriodDetailSheet(
                     period:              period,
                     allPeriods:          allPeriods,
-                    carryForwardBalance: settings?.carryForwardBalance ?? true
+                    carryForwardBalance: settings?.carryForwardBalance ?? true,
+                    tightThreshold:      settings?.tightThreshold ?? 500
                 )
             }
         }
@@ -164,9 +167,13 @@ struct ProjectionView: View {
                     .frame(height: 220)
                     .padding(.horizontal, 16)
             } else {
-                BalanceChartView(periods: allPeriods, showFullYear: true)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
+                BalanceChartView(
+                    periods:        allPeriods,
+                    showFullYear:   true,
+                    tightThreshold: settings?.tightThreshold ?? 500
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
             }
         }
     }
@@ -192,11 +199,17 @@ struct ProjectionView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
-            let maxBal = allPeriods.map(\.projectedBalance).max() ?? 1
+            let carryForward = settings?.carryForwardBalance ?? true
+            let maxBal: Decimal = carryForward
+                ? (allPeriods.map(\.projectedBalance).max() ?? 1)
+                : (allPeriods.map { abs($0.delta) }.max() ?? 1)
             ForEach(filteredPeriods) { period in
-                PayPeriodCard(period: period, maxBalance: maxBal) {
-                    selectedPeriod = period
-                }
+                PayPeriodCard(
+                    period:              period,
+                    maxBalance:          maxBal,
+                    onTap:               { selectedPeriod = period },
+                    carryForwardBalance: carryForward
+                )
             }
         }
     }

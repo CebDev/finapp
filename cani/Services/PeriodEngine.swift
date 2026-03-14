@@ -45,7 +45,8 @@ struct PeriodEngine {
         accounts: [Account],
         recurring: [RecurringTransaction],
         count: Int,
-        referenceDate: Date = .now
+        referenceDate: Date = .now,
+        overrides: [TransactionOverride] = []
     ) -> [PayPeriod] {
         let calendar = Calendar.current
         let refDay   = calendar.startOfDay(for: referenceDate)
@@ -78,13 +79,33 @@ struct PeriodEngine {
             var activeTx: [RecurringTransaction] = []
             var delta:     Decimal               = 0
 
+            let budgetAccountIds = Set(accounts.filter(\.includeInBudget).map(\.id))
+
             for tx in recurring {
                 let occs = ProjectionEngine.occurrences(
                     of: tx, from: pStart, to: exclusiveEnd, calendar: calendar
                 )
                 guard !occs.isEmpty else { continue }
                 activeTx.append(tx)
-                delta += tx.amount * Decimal(occs.count)
+                for occ in occs {
+                    let normalizedOcc = calendar.startOfDay(for: occ)
+                    let occOverride = overrides.first {
+                        $0.recurringTransactionId == tx.id &&
+                        calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedOcc)
+                    }
+                    let amount = occOverride?.actualAmount ?? tx.amount
+
+                    if tx.isTransfer {
+                        // Transfert : calcul du delta net selon l'inclusion budgétaire des comptes
+                        let sourceInBudget = budgetAccountIds.contains(tx.accountId)
+                        let destInBudget   = tx.transferDestinationAccountId.map { budgetAccountIds.contains($0) } ?? false
+                        // amount > 0 (montant transféré) ; source débité, destination crédité
+                        if sourceInBudget  { delta -= amount }
+                        if destInBudget    { delta += amount }
+                    } else {
+                        delta += amount
+                    }
+                }
             }
 
             let previous       = runningBalance

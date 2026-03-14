@@ -13,14 +13,23 @@ struct HomeView: View {
     @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
     @Query(sort: \Category.sortOrder)        private var allCategories: [Category]
     @Query                                   private var settingsArray: [UserSettings]
+    @Query                                   private var allOverrides:  [TransactionOverride]
 
     @AppStorage("selectedTab") private var selectedTab: Int = 0
 
-    @State private var showingAccounts    = false
-    @State private var showingSettings    = false
+    @State private var showingAccounts      = false
+    @State private var showingSettings      = false
     @State private var settingsDestination: SettingsDestination? = nil
-    @State private var heroAppeared       = false
-    @State private var selectedPeriod:   PayPeriod? = nil
+    @State private var heroAppeared         = false
+    @State private var selectedPeriod:      PayPeriod? = nil
+    @State private var showingOpMenu        = false
+    @State private var menuTargetOp:        UpcomingOperation? = nil
+    @State private var editingRecurring:    RecurringTransaction? = nil
+    @State private var editingOccurrence:   RecurringTransaction? = nil
+    @State private var editingOccDate:      Date = Date()
+    @State private var markingAsPaid:       RecurringTransaction? = nil
+    @State private var markingAsPaidDate:   Date = Date()
+    @State private var selectedAccount:     Account? = nil
 
     // MARK: - Computed
 
@@ -40,7 +49,8 @@ struct HomeView: View {
             settings:  s,
             accounts:  accounts,
             recurring: recurring,
-            count:     5
+            count:     5,
+            overrides: allOverrides
         )
     }
 
@@ -129,8 +139,52 @@ struct HomeView: View {
                 PeriodDetailSheet(
                     period:              period,
                     allPeriods:          allPeriods,
-                    carryForwardBalance: settings?.carryForwardBalance ?? true
+                    carryForwardBalance: settings?.carryForwardBalance ?? true,
+                    tightThreshold:      settings?.tightThreshold ?? 500
                 )
+            }
+            .confirmationDialog(
+                menuTargetOp?.name ?? "",
+                isPresented: $showingOpMenu,
+                titleVisibility: .visible
+            ) {
+                Button("Modifier toutes les occurrences à venir") {
+                    editingRecurring = menuTargetOp?.recurringTransaction
+                    menuTargetOp     = nil
+                }
+                Button("Modifier uniquement cette occurrence") {
+                    if let op = menuTargetOp {
+                        editingOccDate   = op.date
+                        editingOccurrence = op.recurringTransaction
+                    }
+                    menuTargetOp = nil
+                }
+                Divider()
+                Button("Marquer comme payé") {
+                    if let op = menuTargetOp {
+                        markingAsPaidDate = op.date
+                        markingAsPaid     = op.recurringTransaction
+                    }
+                    menuTargetOp = nil
+                }
+                Button("Annuler", role: .cancel) {
+                    menuTargetOp = nil
+                }
+            }
+            .sheet(item: $editingRecurring) { tx in
+                AddTransactionView(editingRecurring: tx)
+            }
+            .sheet(item: $editingOccurrence) { tx in
+                AddTransactionView(
+                    editingOccurrenceRecurring: tx,
+                    editingOccurrenceDate: editingOccDate
+                )
+            }
+            .sheet(item: $markingAsPaid) { tx in
+                MarkAsPaidSheet(transaction: tx, occurrenceDate: markingAsPaidDate)
+            }
+            .sheet(item: $selectedAccount) { account in
+                AccountTransactionsSheet(account: account, categories: allCategories)
             }
             .onAppear {
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.78).delay(0.15)) {
@@ -247,6 +301,8 @@ struct HomeView: View {
                                     .delay(0.25 + Double(index) * 0.06),
                                     value: heroAppeared
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 18))
+                                .onTapGesture { selectedAccount = account }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -273,8 +329,12 @@ struct HomeView: View {
                     .padding(.trailing, 16)
             }
 
-            BalanceChartView(periods: allPeriods, showFullYear: false)
-                .padding(.horizontal, 16)
+            BalanceChartView(
+                periods:        allPeriods,
+                showFullYear:   false,
+                tightThreshold: settings?.tightThreshold ?? 500
+            )
+            .padding(.horizontal, 16)
         }
     }
 
@@ -287,11 +347,17 @@ struct HomeView: View {
                 .padding(.leading, 16)
                 .padding(.bottom, 8)
 
-            let maxBal = upcomingPeriods.map(\.projectedBalance).max() ?? 1
+            let carryForward = settings?.carryForwardBalance ?? true
+            let maxBal: Decimal = carryForward
+                ? (upcomingPeriods.map(\.projectedBalance).max() ?? 1)
+                : (upcomingPeriods.map { abs($0.delta) }.max() ?? 1)
             ForEach(upcomingPeriods) { period in
-                PayPeriodCard(period: period, maxBalance: maxBal) {
-                    selectedPeriod = period
-                }
+                PayPeriodCard(
+                    period:              period,
+                    maxBalance:          maxBal,
+                    onTap:               { selectedPeriod = period },
+                    carryForwardBalance: carryForward
+                )
             }
         }
     }
@@ -299,7 +365,12 @@ struct HomeView: View {
     // MARK: - Prochaines opérations section
 
     private var upcomingOperationsSection: some View {
-        let ops = UpcomingOperationsService.next(5, from: recurring, categories: allCategories)
+        let ops = UpcomingOperationsService.next(
+            5,
+            from: recurring,
+            categories: allCategories,
+            overrides: allOverrides
+        )
         return VStack(alignment: .leading, spacing: 0) {
             Text("Prochaines opérations")
                 .font(.headline)
@@ -316,6 +387,11 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     ForEach(ops) { op in
                         UpcomingOperationRow(operation: op)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                menuTargetOp  = op
+                                showingOpMenu = true
+                            }
                         if op.id != ops.last?.id {
                             Divider()
                                 .padding(.leading, 68)
@@ -419,12 +495,14 @@ private struct HeroPill: View {
 
 private struct CompactAccountCard: View {
     let account: Account
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(account.type.accentColor.opacity(0.12))
+                    // Plus d'opacité en dark pour que l'icône ressorte du fond sombre
+                    .fill(account.type.accentColor.opacity(colorScheme == .dark ? 0.22 : 0.12))
                     .frame(width: 38, height: 38)
                 Image(systemName: account.icon)
                     .font(.system(size: 16, weight: .medium))
@@ -449,8 +527,25 @@ private struct CompactAccountCard: View {
         .frame(width: 145, height: 118)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 3)
+                // secondarySystemGroupedBackground = blanc en light, #1C1C1E en dark
+                // — couleur sémantique correcte pour une carte sur fond groupé
+                .fill(Color(.secondarySystemGroupedBackground))
+                .shadow(
+                    color: colorScheme == .dark
+                        ? .clear
+                        : .black.opacity(0.07),
+                    radius: 10, x: 0, y: 3
+                )
+        )
+        // Contour subtil en dark mode pour remplacer visuellement l'ombre
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(
+                    colorScheme == .dark
+                        ? Color.white.opacity(0.08)
+                        : Color.clear,
+                    lineWidth: 1
+                )
         )
     }
 }

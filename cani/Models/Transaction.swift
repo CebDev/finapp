@@ -20,6 +20,10 @@ class Transaction {
     /// UUID de la Category SwiftData sélectionnée (nil = non catégorisé)
     var categoryId: UUID? = nil
     var notes: String? = nil
+    /// Vrai si la transaction est un transfert entre comptes
+    var isTransfer: Bool = false
+    /// UUID du compte de destination pour un transfert (nil si non-transfert)
+    var transferDestinationAccountId: UUID? = nil
 
     init(
         id: UUID = UUID(),
@@ -30,7 +34,9 @@ class Transaction {
         isPast: Bool = true,
         isConfirmed: Bool = true,
         categoryId: UUID? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        isTransfer: Bool = false,
+        transferDestinationAccountId: UUID? = nil
     ) {
         self.id = id
         self.accountId = accountId
@@ -41,5 +47,7 @@ class Transaction {
         self.isConfirmed = isConfirmed
         self.categoryId = categoryId
         self.notes = notes
+        self.isTransfer = isTransfer
+        self.transferDestinationAccountId = transferDestinationAccountId
     }
 }
