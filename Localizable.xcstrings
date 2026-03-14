@@ -368,6 +368,9 @@
     "Actif : chaque période commence avec le solde de fin de la période précédente. Inactif : chaque période est calculée de façon isolée à partir de zéro." : {
 
     },
+    "Actifs" : {
+
+    },
     "add_account.balance_mode.available.description" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1632,6 +1635,9 @@
     "Pas encore" : {
 
     },
+    "Passifs" : {
+
+    },
     "Période de paie" : {
 
     },
@@ -2007,6 +2013,9 @@
 
     },
     "Version" : {
+
+    },
+    "Voir tout" : {
 
     },
     "Voir tout →" : {

@@ -23,6 +23,18 @@ struct AccountsView: View {
             .reduce(Decimal(0)) { $0 + $1.effectiveBalance }
     }
 
+    private var totalAssets: Decimal {
+        accounts
+            .filter { $0.type.isAsset }
+            .reduce(Decimal(0)) { $0 + $1.effectiveBalance }
+    }
+
+    private var totalLiabilities: Decimal {
+        accounts
+            .filter { $0.type.isLiability }
+            .reduce(Decimal(0)) { $0 + Swift.abs(min($1.effectiveBalance, 0)) }
+    }
+
     private var deleteConfirmationMessage: String {
         guard let accountToDelete else { return "" }
         return String(
@@ -102,6 +114,11 @@ struct AccountsView: View {
         List {
             Section {
                 TotalBalanceCard(balance: totalBalance)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+
+                AssetsLiabilitiesCard(assets: totalAssets, liabilities: totalLiabilities)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
@@ -225,6 +242,58 @@ private struct TotalBalanceCard: View {
     }
 }
 
+// MARK: - AssetsLiabilitiesCard
+
+private struct AssetsLiabilitiesCard: View {
+    let assets:      Decimal
+    let liabilities: Decimal
+
+    var netWorth: Decimal { assets - liabilities }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Actifs
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Actifs", systemImage: "arrow.up.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.teal)
+                Text(CurrencyFormatter.shared.format(assets))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Séparateur vertical
+            Rectangle()
+                .fill(Color(.separator).opacity(0.5))
+                .frame(width: 0.5, height: 44)
+                .padding(.horizontal, 12)
+
+            // Passifs
+            VStack(alignment: .trailing, spacing: 4) {
+                Label("Passifs", systemImage: "arrow.down.circle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+                Text(liabilities == 0 ? "—" : CurrencyFormatter.shared.format(liabilities))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        )
+    }
+}
+
 // MARK: - AccountCard
 
 private struct AccountCard: View {
@@ -276,6 +345,15 @@ private struct AccountCard: View {
 // MARK: - AccountType — extensions vue
 
 extension AccountType {
+    var isAsset: Bool {
+        switch self {
+        case .chequing, .savings, .investment: return true
+        case .credit, .creditCard, .mortgage:  return false
+        }
+    }
+
+    var isLiability: Bool { !isAsset }
+
     var displayName: String {
         switch self {
         case .chequing:   return String(localized: "account.type.chequing")
