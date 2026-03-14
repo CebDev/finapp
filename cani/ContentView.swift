@@ -6,13 +6,10 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
     @AppStorage("selectedTab") private var selectedTab: Int = 0
     @State private var showingAddTransaction = false
-    @Query(filter: #Predicate<Subscription> { $0.isActive })
-    private var activeSubscriptions: [Subscription]
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -45,9 +42,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingAddTransaction) {
             AddTransactionView()
-        }
-        .task {
-            await NotificationManager.shared.rescheduleAll(subscriptions: activeSubscriptions)
         }
     }
 }

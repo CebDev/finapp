@@ -17,6 +17,8 @@ struct PeriodProgressChart: View {
     let carryForwardBalance: Bool
     let tightThreshold:      Decimal
     var overrides:           [TransactionOverride] = []
+    /// Transactions réelles de la période (utilisées pour la phase "passé" de la période courante).
+    var realTransactions:    [Transaction]         = []
 
     // MARK: - Colours
 
@@ -33,47 +35,110 @@ struct PeriodProgressChart: View {
     }
 
     /// Construit les points du graphique en escalier.
-    /// Chaque occurrence de transaction dans la période crée un nouveau palier.
+    /// Pour la période courante : phase réelle (transactions confirmées) + phase projetée (occurrences futures).
+    /// Pour les autres périodes : uniquement la projection des récurrences.
     private var steps: [BalanceStep] {
         let cal          = Calendar.current
         let startBalance = carryForwardBalance ? period.previousBalance : Decimal(0)
         let exclusiveEnd = cal.date(byAdding: .day, value: 1, to: period.endDate) ?? period.endDate
 
-        // Collecter toutes les occurrences de la période avec leur montant effectif
+        if period.isCurrentPeriod {
+            return stepsCurrentPeriod(startBalance: startBalance, exclusiveEnd: exclusiveEnd, calendar: cal)
+        } else {
+            return stepsProjected(startBalance: startBalance, exclusiveEnd: exclusiveEnd, calendar: cal)
+        }
+    }
+
+    /// Période courante : transactions réelles jusqu'à aujourd'hui, occurrences planifiées ensuite.
+    private func stepsCurrentPeriod(startBalance: Decimal, exclusiveEnd: Date, calendar: Calendar) -> [BalanceStep] {
+        let today    = calendar.startOfDay(for: Date())
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+
+        // Phase 1 — transactions réelles groupées par jour (du début à aujourd'hui inclus)
+        var realByDay: [Date: Decimal] = [:]
+        for tx in realTransactions {
+            let day = calendar.startOfDay(for: tx.date)
+            guard day >= calendar.startOfDay(for: period.startDate), day <= today else { continue }
+            realByDay[day, default: 0] += tx.amount
+        }
+
+        // Phase 2 — occurrences planifiées de demain à la fin de période (hors overrides payés)
+        var projectedByDay: [Date: Decimal] = [:]
+        for tx in period.transactions {
+            let dates = ProjectionEngine.occurrences(of: tx, from: tomorrow, to: exclusiveEnd, calendar: calendar)
+            for date in dates {
+                let day = calendar.startOfDay(for: date)
+                let ov = overrides.first {
+                    $0.recurringTransactionId == tx.id &&
+                    calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: day)
+                }
+                if let ov, ov.isPaid { continue }
+                projectedByDay[day, default: 0] += ov?.actualAmount ?? tx.amount
+            }
+        }
+
+        var result: [BalanceStep] = []
+        var running = startBalance
+        result.append(BalanceStep(date: period.startDate, balance: running))
+
+        // Paliers réels (passé)
+        for day in realByDay.keys.sorted() {
+            running += realByDay[day]!
+            result.append(BalanceStep(date: day, balance: running))
+        }
+
+        // Point pivot "aujourd'hui" explicite si dans la période
+        let periodStart = calendar.startOfDay(for: period.startDate)
+        let periodEnd   = calendar.startOfDay(for: period.endDate)
+        if today > periodStart, today <= periodEnd, result.last.map({ calendar.startOfDay(for: $0.date) }) != today {
+            result.append(BalanceStep(date: today, balance: running))
+        }
+
+        // Paliers projetés (futur)
+        for day in projectedByDay.keys.sorted() {
+            running += projectedByDay[day]!
+            result.append(BalanceStep(date: day, balance: running))
+        }
+
+        // Point final
+        let lastDay = result.last.map { calendar.startOfDay(for: $0.date) } ?? periodStart
+        if lastDay < periodEnd {
+            result.append(BalanceStep(date: period.endDate, balance: running))
+        }
+
+        return result
+    }
+
+    /// Périodes passées ou futures : projection pure des récurrences.
+    private func stepsProjected(startBalance: Decimal, exclusiveEnd: Date, calendar: Calendar) -> [BalanceStep] {
         var occurrences: [(date: Date, amount: Decimal)] = []
         for tx in period.transactions {
             let dates = ProjectionEngine.occurrences(of: tx, from: period.startDate, to: exclusiveEnd)
             for date in dates {
-                let normalizedDate = cal.startOfDay(for: date)
-                let override = overrides.first {
+                let day = calendar.startOfDay(for: date)
+                let ov = overrides.first {
                     $0.recurringTransactionId == tx.id &&
-                    cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedDate)
+                    calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: day)
                 }
-                occurrences.append((date: normalizedDate, amount: override?.actualAmount ?? tx.amount))
+                occurrences.append((date: day, amount: ov?.actualAmount ?? tx.amount))
             }
         }
 
-        // Regrouper par jour (plusieurs transactions le même jour → un seul palier)
-        let grouped = Dictionary(grouping: occurrences, by: { $0.date })
+        let grouped     = Dictionary(grouping: occurrences, by: { $0.date })
         let sortedDates = grouped.keys.sorted()
 
-        // Construire les paliers
         var result: [BalanceStep] = []
         var running = startBalance
-
-        // Point de départ au début de la période
         result.append(BalanceStep(date: period.startDate, balance: running))
 
         for day in sortedDates {
-            let dayTotal = grouped[day]!.reduce(Decimal(0)) { $0 + $1.amount }
-            running += dayTotal
+            running += grouped[day]!.reduce(Decimal(0)) { $0 + $1.amount }
             result.append(BalanceStep(date: day, balance: running))
         }
 
-        // Point final à la fin de la période (si le dernier palier n'est pas déjà là)
-        let lastDate = cal.startOfDay(for: result.last?.date ?? period.startDate)
-        let endDay   = cal.startOfDay(for: period.endDate)
-        if lastDate < endDay {
+        let lastDay = calendar.startOfDay(for: result.last?.date ?? period.startDate)
+        let endDay  = calendar.startOfDay(for: period.endDate)
+        if lastDay < endDay {
             result.append(BalanceStep(date: period.endDate, balance: running))
         }
 
@@ -226,6 +291,22 @@ struct PeriodProgressChart: View {
                 RuleMark(y: .value("Zéro", 0))
                     .foregroundStyle(Color.secondary.opacity(0.30))
                     .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+
+            // Ligne "Aujourd'hui" — pivot réel / projeté (période courante uniquement)
+            if period.isCurrentPeriod {
+                RuleMark(x: .value("Aujourd'hui", Date.now))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .foregroundStyle(Color.secondary.opacity(0.55))
+                    .annotation(position: .top, spacing: 2) {
+                        Text("Aujourd'hui")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(.ultraThinMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
             }
         }
         .chartYScale(domain: yMin...yMax)

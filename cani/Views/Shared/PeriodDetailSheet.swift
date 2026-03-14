@@ -210,7 +210,10 @@ struct PeriodDetailSheet: View {
                             period:              period,
                             carryForwardBalance: carryForwardBalance,
                             tightThreshold:      tightThreshold,
-                            overrides:           allOverrides
+                            overrides:           allOverrides,
+                            realTransactions:    period.isCurrentPeriod
+                                ? allTransactions.filter { $0.date >= period.startDate }
+                                : []
                         )
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)

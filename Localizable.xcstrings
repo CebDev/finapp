@@ -793,6 +793,9 @@
         }
       }
     },
+    "Ajoutez une transaction récurrente et cochez « Abonnement »." : {
+
+    },
     "Ajoutez une transaction récurrente via le bouton +." : {
 
     },
@@ -812,6 +815,9 @@
 
     },
     "Aucun" : {
+
+    },
+    "Aucun abonnement" : {
 
     },
     "Aucun compte — créez-en un d'abord" : {

@@ -12,7 +12,7 @@ struct UpcomingOperationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Icône : checkmark vert si payé, sinon badge catégorie normal
+            // Icône : checkmark vert si payé, logo abonnement si disponible, sinon catégorie
             if operation.isPaid {
                 ZStack {
                     Circle()
@@ -22,6 +22,9 @@ struct UpcomingOperationRow: View {
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(Color.green)
                 }
+            } else if operation.recurringTransaction.isSubscription,
+                      !operation.recurringTransaction.logo.isEmpty {
+                SubscriptionLogoImage(logo: operation.recurringTransaction.logo, size: 36)
             } else if let cat = operation.category {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {

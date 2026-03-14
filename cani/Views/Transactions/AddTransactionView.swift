@@ -53,6 +53,8 @@ struct AddTransactionView: View {
     var editingOccurrenceDate: Date? = nil
     /// true → le toggle "Transaction récurrente" est pré-coché à l'ouverture.
     var defaultRecurring: Bool = false
+    /// true → le toggle "Abonnement" est pré-coché (implique isRecurring = true).
+    var defaultSubscription: Bool = false
 
     @Query(sort: \Account.name)       private var accounts:       [Account]
     @Query(sort: \Category.sortOrder) private var allCategories: [Category]
@@ -616,7 +618,8 @@ struct AddTransactionView: View {
         } else {
             // Auto-sélectionner le seul compte s'il n'y en a qu'un
             if accounts.count == 1 { selectedAccountId = accounts[0].id }
-            if defaultRecurring { isRecurring = true }
+            if defaultRecurring || defaultSubscription { isRecurring = true }
+            if defaultSubscription { isSubscription = true }
         }
     }
 }
