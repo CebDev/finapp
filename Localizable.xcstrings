@@ -19,6 +19,9 @@
     "« %@ » sera supprimée. Les transactions passées ne seront pas affectées." : {
 
     },
+    "**%@**" : {
+
+    },
     "%lld" : {
 
     },
@@ -811,7 +814,13 @@
     "Aux deux semaines" : {
 
     },
+    "C" : {
+
+    },
     "CAD" : {
+
+    },
+    "CanI" : {
 
     },
     "Catégorie" : {
@@ -1107,7 +1116,13 @@
     "Compte source" : {
 
     },
+    "Confirmer la suppression" : {
+
+    },
     "Confirmer le paiement" : {
+
+    },
+    "Continuer" : {
 
     },
     "Date" : {
@@ -1125,7 +1140,16 @@
     "Dépenses" : {
 
     },
+    "Dernière confirmation" : {
+
+    },
+    "Dernières opérations" : {
+
+    },
     "Détails" : {
+
+    },
+    "Données effacées — nouveau départ !" : {
 
     },
     "edit_account.navigation.title" : {
@@ -1145,10 +1169,16 @@
         }
       }
     },
+    "Effacer toutes les données" : {
+
+    },
+    "Effacer toutes mes données" : {
+
+    },
     "En cours" : {
 
     },
-    "Enregistrer" : {
+    "Entrez le montant dû. Le solde sera automatiquement traité comme négatif dans la projection." : {
 
     },
     "Évolution" : {
@@ -1157,7 +1187,7 @@
     "Évolution sur 12 mois" : {
 
     },
-    "Fermer" : {
+    "Facultatif" : {
 
     },
     "Fin" : {
@@ -1392,6 +1422,9 @@
     "Modifier uniquement cette occurrence" : {
 
     },
+    "Montant" : {
+
+    },
     "Montant invalide" : {
 
     },
@@ -1402,6 +1435,9 @@
 
     },
     "Note" : {
+
+    },
+    "Notes" : {
 
     },
     "Nouvelle transaction" : {
@@ -1458,7 +1494,13 @@
     "Prochaines périodes" : {
 
     },
+    "Profil" : {
+
+    },
     "Projection" : {
+
+    },
+    "Projection financière" : {
 
     },
     "Récurrences" : {
@@ -1624,6 +1666,9 @@
     "Solde projeté" : {
 
     },
+    "Supprime définitivement tous vos comptes, transactions, récurrences, objectifs et simulations. Les catégories et préférences seront réinitialisées." : {
+
+    },
     "Supprimer" : {
 
     },
@@ -1715,7 +1760,16 @@
         }
       }
     },
+    "Tapez %@ pour confirmer." : {
+
+    },
+    "Tapez exactement « %@ »" : {
+
+    },
     "Tous les comptes" : {
+
+    },
+    "Tous vos comptes, transactions, récurrences, objectifs et simulations seront supprimés. Cette action ne peut pas être annulée." : {
 
     },
     "Toutes les périodes" : {
@@ -1728,6 +1782,12 @@
 
     },
     "Une alerte orange s'affiche quand le solde projeté tombe sous ce seuil." : {
+
+    },
+    "v%@" : {
+
+    },
+    "Version" : {
 
     },
     "Voir tout →" : {

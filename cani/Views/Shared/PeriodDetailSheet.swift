@@ -177,9 +177,10 @@ struct PeriodDetailSheet: View {
             .navigationTitle(dateRangeLabel)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fermer") { dismiss() }
-                        .fontWeight(.semibold)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
                 }
             }
             .confirmationDialog(

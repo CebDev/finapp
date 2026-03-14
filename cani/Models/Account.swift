@@ -25,15 +25,17 @@ class Account {
     }
     var icon: String = "creditcard"
     var createdAt: Date = Date()
+    var sortOrder: Int = 0
 
     /// Solde effectif selon le type de compte et le mode d'affichage choisi.
     /// C'est cette valeur qui doit être utilisée partout pour l'affichage et la projection.
     var effectiveBalance: Decimal {
         switch type {
         case .creditCard:
+            // currentBalance est négatif (ex: -500 = 500$ utilisés)
             switch creditBalanceDisplayMode {
             case .creditAvailable:
-                return (creditLimit ?? Decimal(0)) - currentBalance
+                return (creditLimit ?? Decimal(0)) + currentBalance
             case .creditOwed:
                 return -currentBalance
             }

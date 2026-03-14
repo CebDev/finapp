@@ -68,7 +68,12 @@ struct AddAccountView: View {
 
                 // MARK: Solde actuel
                 Section {
-                    HStack {
+                    HStack(spacing: 4) {
+                        if isNegativeBalanceType {
+                            Text("−")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
                         TextField(String(localized: "common.amount_placeholder"), text: $balanceText)
                             .keyboardType(.decimalPad)
                             .onChange(of: balanceText) { _, _ in
@@ -86,8 +91,13 @@ struct AddAccountView: View {
                 } header: {
                     Text("add_account.balance.title")
                 } footer: {
-                    Text("add_account.balance.footer")
-                        .font(.caption)
+                    if isNegativeBalanceType {
+                        Text("Entrez le montant dû. Le solde sera automatiquement traité comme négatif dans la projection.")
+                            .font(.caption)
+                    } else {
+                        Text("add_account.balance.footer")
+                            .font(.caption)
+                    }
                 }
 
                 // MARK: Limite de crédit — type credit (existant, inchangé)
@@ -208,16 +218,15 @@ struct AddAccountView: View {
             .navigationTitle("add_account.navigation.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("common.cancel") {
-                        dismiss()
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("common.save") {
-                        save()
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { save() } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
                     }
-                    .fontWeight(.semibold)
                     .disabled(!isFormValid)
                 }
             }
@@ -226,11 +235,16 @@ struct AddAccountView: View {
 
     // MARK: - Actions
 
+    private var isNegativeBalanceType: Bool {
+        type == .credit || type == .creditCard || type == .mortgage
+    }
+
     private func save() {
-        guard let balance = parseDecimal(balanceText) else {
+        guard let rawBalance = parseDecimal(balanceText) else {
             balanceInvalid = true
             return
         }
+        let balance = isNegativeBalanceType ? -abs(rawBalance) : rawBalance
 
         let creditLimit: Decimal? = ((type == .credit || type == .creditCard) && !creditLimitText.isEmpty)
             ? parseDecimal(creditLimitText)

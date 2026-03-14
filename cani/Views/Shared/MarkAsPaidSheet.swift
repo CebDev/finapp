@@ -14,7 +14,7 @@ struct MarkAsPaidSheet: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss)      private var dismiss
-    @Query(sort: \Account.createdAt) private var accounts:  [Account]
+    @Query(sort: \Account.sortOrder) private var accounts:  [Account]
     @Query                           private var overrides: [TransactionOverride]
 
     @State private var amountString:        String  = ""
@@ -58,13 +58,9 @@ struct MarkAsPaidSheet: View {
             .navigationTitle(transaction.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color(.tertiaryLabel))
-                            .font(.title3)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
                     }
                 }
             }
@@ -253,8 +249,10 @@ struct MarkAsPaidSheet: View {
             .navigationTitle("Choisir un compte")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fermer") { showingAccountPicker = false }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { showingAccountPicker = false } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
                 }
             }
         }

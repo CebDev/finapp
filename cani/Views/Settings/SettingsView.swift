@@ -51,9 +51,10 @@ struct SettingsView: View {
             .navigationTitle("settings.navigation.title")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("common.done") { dismiss() }
-                        .fontWeight(.semibold)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
                 }
             }
             .navigationDestination(for: SettingsDestination.self) { dest in

@@ -9,11 +9,16 @@ import SwiftUI
 import SwiftData
 
 struct HomeView: View {
-    @Query(sort: \Account.createdAt)         private var accounts:      [Account]
+    @Query(sort: \Account.sortOrder)         private var accounts:      [Account]
     @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
     @Query(sort: \Category.sortOrder)        private var allCategories: [Category]
     @Query                                   private var settingsArray: [UserSettings]
     @Query                                   private var allOverrides:  [TransactionOverride]
+    @Query(
+        filter: #Predicate<Transaction> { $0.isPast },
+        sort:   \Transaction.date,
+        order:  .reverse
+    )                                        private var allPastTransactions: [Transaction]
 
     @AppStorage("selectedTab") private var selectedTab: Int = 0
 
@@ -76,6 +81,10 @@ struct HomeView: View {
                     if !allPeriods.isEmpty {
                         evolutionSection
                         upcomingPeriodsSection
+                    }
+
+                    if !recentTransactions.isEmpty {
+                        recentOperationsSection
                     }
 
                     upcomingOperationsSection
@@ -361,6 +370,131 @@ struct HomeView: View {
             }
         }
     }
+
+    // MARK: - Dernières opérations section
+
+    private var recentTransactions: [Transaction] {
+        Array(allPastTransactions.prefix(5))
+    }
+
+    private var recentOperationsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Dernières opérations")
+                .font(.headline)
+                .padding(.leading, 16)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 0) {
+                ForEach(recentTransactions) { tx in
+                    recentTransactionRow(tx)
+                    if tx.id != recentTransactions.last?.id {
+                        Divider().padding(.leading, 68)
+                    }
+                }
+            }
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func recentTransactionRow(_ tx: Transaction) -> some View {
+        let isIncome   = tx.amount > 0
+        let isTransfer = tx.isTransfer
+        let cat        = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
+        let label      = recentTransactionLabel(tx)
+        let accountName = accounts.first(where: { $0.id == tx.accountId })?.name ?? ""
+
+        return HStack(spacing: 12) {
+            // Icône
+            if isTransfer {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.indigo.opacity(0.12))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.indigo)
+                }
+            } else if let cat {
+                CategoryIconBadge(icon: cat.icon, color: cat.color, size: 38)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.10))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: isIncome ? "arrow.down.circle" : "arrow.up.circle")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(isIncome ? Color.green : amberColor)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(shortDate(tx.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !accountName.isEmpty {
+                        Text("·")
+                            .font(.caption)
+                            .foregroundStyle(.secondary.opacity(0.4))
+                        Text(accountName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            Spacer()
+
+            if isTransfer {
+                Text(CurrencyFormatter.shared.format(abs(tx.amount)))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.indigo)
+            } else {
+                Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(tx.amount)))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isIncome ? Color.green : amberColor)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(Color(.systemBackground))
+    }
+
+    private func recentTransactionLabel(_ tx: Transaction) -> String {
+        if tx.isTransfer {
+            let destName = tx.transferDestinationAccountId
+                .flatMap { id in accounts.first { $0.id == id } }?.name
+            return destName.map { "Transfert → \($0)" } ?? "Transfert"
+        }
+        if let recurId = tx.recurringTransactionId,
+           let recurring = recurring.first(where: { $0.id == recurId }) {
+            return recurring.name
+        }
+        if let notes = tx.notes, !notes.isEmpty { return notes }
+        if let cat = tx.categoryId.flatMap({ id in allCategories.first { $0.id == id } }) { return cat.name }
+        return tx.amount > 0 ? "Revenu" : "Dépense"
+    }
+
+    private static let recentDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale     = Locale(identifier: "fr_CA")
+        f.dateFormat = "d MMM"
+        return f
+    }()
+
+    private func shortDate(_ date: Date) -> String {
+        Self.recentDateFormatter.string(from: date).replacingOccurrences(of: ".", with: "")
+    }
+
+    private var amberColor: Color { Color(red: 1.0, green: 0.7, blue: 0.0) }
 
     // MARK: - Prochaines opérations section
 

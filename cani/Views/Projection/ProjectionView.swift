@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct ProjectionView: View {
-    @Query(sort: \Account.createdAt)         private var accounts:      [Account]
+    @Query(sort: \Account.sortOrder)         private var accounts:      [Account]
     @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
     @Query                                   private var settingsArray: [UserSettings]
     @Query                                   private var allOverrides:  [TransactionOverride]

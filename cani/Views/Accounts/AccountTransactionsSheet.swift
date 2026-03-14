@@ -12,12 +12,15 @@ import SwiftData
 
 /// Représente une entrée dans le relevé, qu'elle vienne d'un Transaction ou d'un TransactionOverride payé.
 private struct AccountEntry: Identifiable {
-    let id:         UUID
-    let date:       Date
-    let amount:     Decimal
-    let categoryId: UUID?
-    let label:      String
-    let isPaidOverride: Bool   // true = provient d'une récurrence payée
+    let id:                           UUID
+    let date:                         Date
+    let amount:                       Decimal
+    let categoryId:                   UUID?
+    let label:                        String
+    let isPaidOverride:               Bool    // true = provient d'une récurrence payée
+    let isTransfer:                   Bool
+    let transferDestinationAccountId: UUID?
+    let accountId:                    UUID    // compte source de l'opération
 }
 
 // MARK: - Sheet principale
@@ -26,7 +29,8 @@ struct AccountTransactionsSheet: View {
     let account:    Account
     let categories: [Category]
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss)      private var dismiss
+    @Environment(\.modelContext) private var context
 
     /// Transactions manuelles passées et confirmées sur ce compte (3 derniers mois).
     @Query private var pastTransactions: [Transaction]
@@ -37,6 +41,13 @@ struct AccountTransactionsSheet: View {
 
     /// Récurrences pour résoudre noms et catégories des overrides payés.
     @Query private var allRecurring: [RecurringTransaction]
+
+    /// Tous les comptes — nécessaire pour reverser les transferts.
+    @Query private var allAccounts: [Account]
+
+    @State private var tappedEntry:      AccountEntry? = nil
+    @State private var showingEntryMenu: Bool          = false
+    @State private var editingEntry:     AccountEntry? = nil
 
     private static let amberColor = Color(red: 1.0, green: 0.7, blue: 0.0)
 
@@ -81,12 +92,15 @@ struct AccountTransactionsSheet: View {
             let cat   = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
             let label = entryLabel(notes: tx.notes, categoryName: cat?.name, isIncome: tx.amount > 0)
             result.append(AccountEntry(
-                id:             tx.id,
-                date:           tx.date,
-                amount:         tx.amount,
-                categoryId:     tx.categoryId,
-                label:          label,
-                isPaidOverride: false
+                id:                           tx.id,
+                date:                         tx.date,
+                amount:                       tx.amount,
+                categoryId:                   tx.categoryId,
+                label:                        label,
+                isPaidOverride:               false,
+                isTransfer:                   tx.isTransfer,
+                transferDestinationAccountId: tx.transferDestinationAccountId,
+                accountId:                    tx.accountId
             ))
         }
 
@@ -108,12 +122,15 @@ struct AccountTransactionsSheet: View {
             let label  = entryLabel(notes: override.notes, categoryName: cat?.name, isIncome: recurring.isIncome, fallback: recurring.name)
 
             result.append(AccountEntry(
-                id:             override.id,
-                date:           entryDate,
-                amount:         amount,
-                categoryId:     recurring.categoryId,
-                label:          label,
-                isPaidOverride: true
+                id:                           override.id,
+                date:                         entryDate,
+                amount:                       amount,
+                categoryId:                   recurring.categoryId,
+                label:                        label,
+                isPaidOverride:               true,
+                isTransfer:                   false,
+                transferDestinationAccountId: nil,
+                accountId:                    targetAccountId
             ))
         }
 
@@ -188,9 +205,30 @@ struct AccountTransactionsSheet: View {
             .navigationTitle(account.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fermer") { dismiss() }
-                        .fontWeight(.semibold)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
+                }
+            }
+            .confirmationDialog(
+                tappedEntry?.label ?? "",
+                isPresented: $showingEntryMenu,
+                titleVisibility: .visible
+            ) {
+                Button("Modifier") {
+                    editingEntry = tappedEntry
+                    tappedEntry  = nil
+                }
+                Button("Supprimer", role: .destructive) {
+                    if let entry = tappedEntry { deleteEntry(entry) }
+                    tappedEntry = nil
+                }
+                Button("Annuler", role: .cancel) { tappedEntry = nil }
+            }
+            .sheet(item: $editingEntry) { entry in
+                EditEntrySheet(entry: entry, accounts: allAccounts, categories: categories) { newSignedAmount, newDate, newNotes, newAccountId in
+                    updateEntry(entry, newSignedAmount: newSignedAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId)
                 }
             }
         }
@@ -368,6 +406,92 @@ struct AccountTransactionsSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            tappedEntry      = entry
+            showingEntryMenu = true
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                deleteEntry(entry)
+            } label: {
+                Label("Supprimer", systemImage: "trash")
+            }
+        }
+    }
+
+    // MARK: - Suppression
+
+    private func deleteEntry(_ entry: AccountEntry) {
+        if entry.isTransfer {
+            // Transfert : annuler le débit sur le compte source et le crédit sur la destination
+            account.currentBalance += entry.amount
+            if let destId = entry.transferDestinationAccountId,
+               let destAccount = allAccounts.first(where: { $0.id == destId }) {
+                destAccount.currentBalance -= entry.amount
+            }
+            if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
+                context.delete(tx)
+            }
+        } else if entry.isPaidOverride {
+            // Récurrence payée : annuler le montant et supprimer l'override
+            account.currentBalance -= entry.amount
+            if let override = paidOverrides.first(where: { $0.id == entry.id }) {
+                context.delete(override)
+            }
+        } else {
+            // Transaction simple : annuler le montant signé et supprimer la transaction
+            account.currentBalance -= entry.amount
+            if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
+                context.delete(tx)
+            }
+        }
+    }
+
+    // MARK: - Édition
+
+    private func updateEntry(_ entry: AccountEntry, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
+        let delta         = newSignedAmount - entry.amount
+        let accountChanged = newAccountId != entry.accountId
+
+        if entry.isTransfer {
+            // Transfert : ajuster le delta montant sur source et destination (pas de déplacement de compte)
+            account.currentBalance -= delta
+            if let destId = entry.transferDestinationAccountId,
+               let destAccount = allAccounts.first(where: { $0.id == destId }) {
+                destAccount.currentBalance += delta
+            }
+            if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
+                tx.amount = newSignedAmount
+                tx.date   = newDate
+                tx.notes  = newNotes
+            }
+        } else if entry.isPaidOverride {
+            // Override payé : delta montant uniquement, pas de déplacement de compte
+            let sourceAccount = allAccounts.first(where: { $0.id == entry.accountId }) ?? account
+            sourceAccount.currentBalance += delta
+            if let override = paidOverrides.first(where: { $0.id == entry.id }) {
+                override.actualAmount = newSignedAmount
+                override.actualDate   = newDate
+                override.notes        = newNotes
+            }
+        } else {
+            // Transaction simple — supporte le déplacement de compte
+            let sourceAccount = allAccounts.first(where: { $0.id == entry.accountId }) ?? account
+            if accountChanged, let newAccount = allAccounts.first(where: { $0.id == newAccountId }) {
+                // Reversal sur l'ancien compte, application sur le nouveau
+                sourceAccount.currentBalance -= entry.amount
+                newAccount.currentBalance    += newSignedAmount
+            } else {
+                sourceAccount.currentBalance += delta
+            }
+            if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
+                tx.amount    = newSignedAmount
+                tx.date      = newDate
+                tx.notes     = newNotes
+                tx.accountId = newAccountId
+            }
+        }
     }
 
     // MARK: - Empty state
@@ -411,5 +535,121 @@ struct AccountTransactionsSheet: View {
 
     private func shortDate(_ date: Date) -> String {
         Self.dayFormatter.string(from: date).replacingOccurrences(of: ".", with: "")
+    }
+}
+
+// MARK: - EditEntrySheet
+
+private struct EditEntrySheet: View {
+    let entry:      AccountEntry
+    let accounts:   [Account]
+    let categories: [Category]
+    let onSave:     (Decimal, Date, String?, UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var amountFocused: Bool
+
+    @State private var amountText:        String
+    @State private var date:              Date
+    @State private var notes:             String
+    @State private var selectedAccountId: UUID
+
+    init(entry: AccountEntry, accounts: [Account], categories: [Category], onSave: @escaping (Decimal, Date, String?, UUID) -> Void) {
+        self.entry      = entry
+        self.accounts   = accounts
+        self.categories = categories
+        self.onSave     = onSave
+        _amountText        = State(initialValue: "\(abs(entry.amount))")
+        _date              = State(initialValue: entry.date)
+        _notes             = State(initialValue: "")
+        _selectedAccountId = State(initialValue: entry.accountId)
+    }
+
+    private var parsedAmount: Decimal? {
+        let normalized = amountText
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "")
+        guard !normalized.isEmpty else { return nil }
+        return Decimal(string: normalized)
+    }
+
+    private var isIncome: Bool { entry.amount > 0 }
+
+    private var isValid: Bool {
+        parsedAmount != nil && parsedAmount! > 0
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Montant") {
+                    HStack(spacing: 6) {
+                        if entry.isTransfer {
+                            Image(systemName: "arrow.left.arrow.right")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.indigo)
+                                .frame(width: 16)
+                        } else {
+                            Text(isIncome ? "+" : "−")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(isIncome ? .green : .orange)
+                                .frame(width: 16)
+                        }
+                        TextField("0,00", text: $amountText)
+                            .keyboardType(.decimalPad)
+                            .focused($amountFocused)
+                        Spacer()
+                        Text("$")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !entry.isTransfer && !entry.isPaidOverride && accounts.count > 1 {
+                    Section("Compte") {
+                        Picker("Compte", selection: $selectedAccountId) {
+                            ForEach(accounts) { acc in
+                                Label(acc.name, systemImage: acc.icon).tag(acc.id)
+                            }
+                        }
+                    }
+                }
+
+                Section("Date") {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .environment(\.locale, Locale(identifier: "fr_CA"))
+                        .labelsHidden()
+                }
+
+                Section("Notes") {
+                    TextField("Facultatif", text: $notes, axis: .vertical)
+                        .lineLimit(3)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle("Modifier")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        guard let raw = parsedAmount else { return }
+                        let signed = entry.isTransfer ? raw : (isIncome ? raw : -raw)
+                        onSave(signed, date, notes.isEmpty ? nil : notes, selectedAccountId)
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
+                    }
+                    .disabled(!isValid)
+                }
+            }
+            .onAppear { amountFocused = true }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }

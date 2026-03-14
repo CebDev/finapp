@@ -106,12 +106,15 @@ struct AddTransactionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") { dismiss() }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") { save() }
-                        .fontWeight(.semibold)
-                        .disabled(!isFormValid)
+                    Button { save() } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
+                    }
+                    .disabled(!isFormValid)
                 }
             }
             .onAppear { prefillIfEditing() }

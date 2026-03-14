@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct AccountsView: View {
-    @Query(sort: \Account.createdAt) private var accounts: [Account]
+    @Query(sort: \Account.sortOrder) private var accounts: [Account]
     @Environment(\.modelContext) private var context
 
     @State private var showingAddAccount = false
@@ -32,6 +32,14 @@ struct AccountsView: View {
         )
     }
 
+    private func moveAccounts(from source: IndexSet, to destination: Int) {
+        var reordered = accounts
+        reordered.move(fromOffsets: source, toOffset: destination)
+        for (index, account) in reordered.enumerated() {
+            account.sortOrder = index
+        }
+    }
+
     private var accountsCountTitle: String {
         String(
             format: String(localized: "accounts.list.count"),
@@ -52,6 +60,9 @@ struct AccountsView: View {
             .navigationTitle("accounts.navigation.title")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingAddAccount = true
@@ -120,6 +131,7 @@ struct AccountsView: View {
                             .tint(.orange)
                         }
                 }
+                .onMove(perform: moveAccounts)
             } header: {
                 Text(accountsCountTitle)
                     .font(.footnote)

@@ -166,13 +166,16 @@ private struct CategoryFormSheet: View {
             .navigationTitle(LocalizedStringKey(titleKey))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("common.cancel") { dismiss() }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("common.save") { save() }
-                        .fontWeight(.semibold)
-                        .disabled(!isValid)
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { save() } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
+                    }
+                    .disabled(!isValid)
                 }
             }
         }
