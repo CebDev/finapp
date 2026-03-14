@@ -6,10 +6,13 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
     @AppStorage("selectedTab") private var selectedTab: Int = 0
     @State private var showingAddTransaction = false
+    @Query(filter: #Predicate<Subscription> { $0.isActive })
+    private var activeSubscriptions: [Subscription]
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -26,7 +29,7 @@ struct ContentView: View {
                 .tabItem { Label("tab.add", systemImage: "plus.circle.fill") }
                 .tag(2)
 
-            AbonnementsView()
+            SubscriptionsView()
                 .tabItem { Label("tab.subscriptions", systemImage: "rectangle.stack.fill") }
                 .tag(3)
 
@@ -43,6 +46,9 @@ struct ContentView: View {
         .sheet(isPresented: $showingAddTransaction) {
             AddTransactionView()
         }
+        .task {
+            await NotificationManager.shared.rescheduleAll(subscriptions: activeSubscriptions)
+        }
     }
 }
 
@@ -57,20 +63,6 @@ struct AccueilView: View {
                 description: Text("placeholder.coming_soon")
             )
             .navigationTitle(String(localized: "tab.home"))
-            .navigationBarTitleDisplayMode(.large)
-        }
-    }
-}
-
-struct AbonnementsView: View {
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView(
-                String(localized: "tab.subscriptions"),
-                systemImage: "rectangle.stack.fill",
-                description: Text("placeholder.coming_soon")
-            )
-            .navigationTitle(String(localized: "tab.subscriptions"))
             .navigationBarTitleDisplayMode(.large)
         }
     }

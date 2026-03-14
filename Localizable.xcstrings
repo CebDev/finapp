@@ -25,6 +25,9 @@
     "+" : {
 
     },
+    "+%lld" : {
+
+    },
     "−" : {
 
     },
@@ -37,13 +40,31 @@
     "0,00" : {
 
     },
+    "1 jour" : {
+
+    },
+    "1 mois" : {
+
+    },
+    "1 semaine" : {
+
+    },
     "3 derniers mois · mouvements réels" : {
+
+    },
+    "3 jours" : {
 
     },
     "500" : {
 
     },
+    "AB" : {
+
+    },
     "Abonnement" : {
+
+    },
+    "Abonnements" : {
 
     },
     "Accédez à l'onglet Projection pour configurer vos périodes." : {
@@ -337,6 +358,9 @@
           }
         }
       }
+    },
+    "Actif" : {
+
     },
     "Actif : chaque période commence avec le solde de fin de la période précédente." : {
 
@@ -784,6 +808,9 @@
     "Annuler" : {
 
     },
+    "Août" : {
+
+    },
     "Aucun" : {
 
     },
@@ -820,10 +847,16 @@
     "Aujourd'hui" : {
 
     },
+    "Autre" : {
+
+    },
     "Aux deux semaines" : {
 
     },
     "Avez-vous créé tous les comptes à suivre avec leur solde initial ?" : {
+
+    },
+    "Avril" : {
 
     },
     "C" : {
@@ -832,7 +865,13 @@
     "CAD" : {
 
     },
+    "CAD $" : {
+
+    },
     "CanI" : {
+
+    },
+    "CanI a besoin de la permission d'envoyer des notifications. Activez-la dans Réglages." : {
 
     },
     "Catégorie" : {
@@ -1146,7 +1185,13 @@
     "Continuer" : {
 
     },
+    "Couleur" : {
+
+    },
     "Date" : {
+
+    },
+    "Date de départ" : {
 
     },
     "Date de fin" : {
@@ -1156,6 +1201,15 @@
 
     },
     "Début" : {
+
+    },
+    "Début le" : {
+
+    },
+    "Décembre" : {
+
+    },
+    "Délai" : {
 
     },
     "Dépenses" : {
@@ -1168,6 +1222,12 @@
 
     },
     "Détails" : {
+
+    },
+    "Dimanche" : {
+
+    },
+    "Divertissement" : {
 
     },
     "Données effacées — nouveau départ !" : {
@@ -1214,10 +1274,16 @@
     "Facultatif" : {
 
     },
+    "Février" : {
+
+    },
     "Fin" : {
 
     },
     "Fin %@" : {
+
+    },
+    "Fin le" : {
 
     },
     "Fréquence" : {
@@ -1425,6 +1491,21 @@
     "Icône" : {
 
     },
+    "Informations" : {
+
+    },
+    "Initiales / icône" : {
+
+    },
+    "Janvier" : {
+
+    },
+    "Jeudi" : {
+
+    },
+    "Jeux" : {
+
+    },
     "Jour de la semaine" : {
 
     },
@@ -1434,16 +1515,43 @@
     "Jour du mois" : {
 
     },
+    "Juillet" : {
+
+    },
+    "Juin" : {
+
+    },
+    "La notification sera envoyée à 9 h 00 le matin du rappel." : {
+
+    },
     "Les périodes seront calculées à partir des soldes actuels de vos comptes." : {
 
     },
     "Les périodes seront générées à partir des soldes actuels de vos comptes. Assurez-vous d'avoir créé tous vos comptes avant de continuer." : {
 
     },
+    "Lundi" : {
+
+    },
+    "M'avertir avant le renouvellement" : {
+
+    },
+    "Mai" : {
+
+    },
+    "Mardi" : {
+
+    },
     "Marquer comme payé" : {
 
     },
+    "Mars" : {
+
+    },
     "Mensuel" : {
+
+    },
+    "Mercredi" : {
 
     },
     "Modifier" : {
@@ -1461,6 +1569,9 @@
     "Modifier uniquement cette occurrence" : {
 
     },
+    "Mois" : {
+
+    },
     "Montant" : {
 
     },
@@ -1468,6 +1579,9 @@
 
     },
     "MONTANT PAYÉ" : {
+
+    },
+    "Musique" : {
 
     },
     "Nom" : {
@@ -1479,13 +1593,31 @@
     "Notes" : {
 
     },
+    "Notes optionnelles" : {
+
+    },
+    "Notifications désactivées" : {
+
+    },
+    "Nouvel abonnement" : {
+
+    },
     "Nouvelle transaction" : {
+
+    },
+    "Novembre" : {
+
+    },
+    "Octobre" : {
 
     },
     "Optionnelle" : {
 
     },
     "Oui, configurer les périodes" : {
+
+    },
+    "Ouvrir Réglages" : {
 
     },
     "Paie & alertes" : {
@@ -1545,6 +1677,9 @@
     "Prochaines périodes" : {
 
     },
+    "Productivité" : {
+
+    },
     "Profil" : {
 
     },
@@ -1566,7 +1701,19 @@
     "Revenus" : {
 
     },
+    "Samedi" : {
+
+    },
     "Sans date de fin" : {
+
+    },
+    "Santé" : {
+
+    },
+    "Sauvegarder" : {
+
+    },
+    "Septembre" : {
 
     },
     "Serrées seulement" : {
@@ -1720,10 +1867,16 @@
     "Solde projeté" : {
 
     },
+    "Stockage" : {
+
+    },
     "Supprime définitivement tous vos comptes, transactions, récurrences, objectifs et simulations. Les catégories et préférences seront réinitialisées." : {
 
     },
     "Supprimer" : {
+
+    },
+    "Supprimer l'abonnement" : {
 
     },
     "Supprimer la récurrence ?" : {
@@ -1842,6 +1995,9 @@
 
     },
     "Valider le paiement" : {
+
+    },
+    "Vendredi" : {
 
     },
     "Version" : {
