@@ -352,10 +352,17 @@ struct HomeView: View {
 
     private var upcomingPeriodsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Prochaines périodes")
-                .font(.headline)
-                .padding(.leading, 16)
-                .padding(.bottom, 8)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Prochaines périodes")
+                    .font(.headline)
+                    .padding(.leading, 16)
+                Spacer()
+                Button("Voir tout") { selectedTab = 1 }
+                    .font(.subheadline)
+                    .foregroundStyle(.indigo)
+                    .padding(.trailing, 16)
+            }
+            .padding(.bottom, 8)
 
             let carryForward = settings?.carryForwardBalance ?? true
             let maxBal: Decimal = carryForward
