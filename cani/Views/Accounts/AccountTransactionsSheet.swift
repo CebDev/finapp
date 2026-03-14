@@ -10,17 +10,16 @@ import SwiftData
 
 // MARK: - Modèle d'affichage unifié
 
-/// Représente une entrée dans le relevé, qu'elle vienne d'un Transaction ou d'un TransactionOverride payé.
+/// Représente une entrée dans le relevé — toujours une Transaction réelle.
 private struct AccountEntry: Identifiable {
     let id:                           UUID
     let date:                         Date
     let amount:                       Decimal
     let categoryId:                   UUID?
     let label:                        String
-    let isPaidOverride:               Bool    // true = provient d'une récurrence payée
     let isTransfer:                   Bool
     let transferDestinationAccountId: UUID?
-    let accountId:                    UUID    // compte source de l'opération
+    let accountId:                    UUID
 }
 
 // MARK: - Sheet principale
@@ -74,63 +73,22 @@ struct AccountTransactionsSheet: View {
     // MARK: - Entrées unifiées
 
     private var entries: [AccountEntry] {
-        let cal    = Calendar.current
-        let cutoff = cal.date(byAdding: .month, value: -3, to: .now) ?? .now
-
         var result: [AccountEntry] = []
 
-        // 1. Transactions passées manuelles
         for tx in pastTransactions {
-            // Si un override payé couvre cette occurrence récurrente, l'afficher via la section 2 uniquement
-            if let recurId = tx.recurringTransactionId {
-                let hasPaidOverride = paidOverrides.contains { ov in
-                    ov.recurringTransactionId == recurId &&
-                    cal.isDate(cal.startOfDay(for: ov.occurrenceDate), inSameDayAs: cal.startOfDay(for: tx.date))
-                }
-                if hasPaidOverride { continue }
-            }
-            let cat   = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
-            let label = entryLabel(notes: tx.notes, categoryName: cat?.name, isIncome: tx.amount > 0)
+            let cat           = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
+            // Résoudre le nom de la récurrence liée (transactions validées depuis PeriodDetailSheet)
+            let recurringName = tx.recurringTransactionId.flatMap { rid in allRecurring.first { $0.id == rid } }?.name
+            let label         = entryLabel(notes: tx.notes, categoryName: cat?.name, isIncome: tx.amount > 0, fallback: recurringName)
             result.append(AccountEntry(
                 id:                           tx.id,
                 date:                         tx.date,
                 amount:                       tx.amount,
                 categoryId:                   tx.categoryId,
                 label:                        label,
-                isPaidOverride:               false,
                 isTransfer:                   tx.isTransfer,
                 transferDestinationAccountId: tx.transferDestinationAccountId,
                 accountId:                    tx.accountId
-            ))
-        }
-
-        // 2. Occurrences récurrentes marquées payées sur ce compte
-        for override in paidOverrides {
-            guard let recurring = allRecurring.first(where: { $0.id == override.recurringTransactionId })
-            else { continue }
-
-            // Vérifie que l'override concerne ce compte
-            let targetAccountId = override.actualAccountId ?? recurring.accountId
-            guard targetAccountId == account.id else { continue }
-
-            // Date effective : actualDate > occurrenceDate
-            let entryDate = override.actualDate ?? override.occurrenceDate
-            guard entryDate >= cutoff else { continue }
-
-            let amount = override.actualAmount ?? recurring.amount
-            let cat    = recurring.categoryId.flatMap { id in categories.first { $0.id == id } }
-            let label  = entryLabel(notes: override.notes, categoryName: cat?.name, isIncome: recurring.isIncome, fallback: recurring.name)
-
-            result.append(AccountEntry(
-                id:                           override.id,
-                date:                         entryDate,
-                amount:                       amount,
-                categoryId:                   recurring.categoryId,
-                label:                        label,
-                isPaidOverride:               true,
-                isTransfer:                   false,
-                transferDestinationAccountId: nil,
-                accountId:                    targetAccountId
             ))
         }
 
@@ -358,17 +316,8 @@ struct AccountTransactionsSheet: View {
         let cat      = entry.categoryId.flatMap { id in categories.first { $0.id == id } }
 
         return HStack(spacing: 12) {
-            // Icône : badge catégorie, ou checkmark vert si récurrence payée, sinon flèche
-            if entry.isPaidOverride {
-                ZStack {
-                    Circle()
-                        .fill(Color.green.opacity(0.12))
-                        .frame(width: 38, height: 38)
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Color.green)
-                }
-            } else if let cat {
+            // Icône : badge catégorie si disponible, sinon flèche directionnelle
+            if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 38)
             } else {
                 ZStack {
@@ -386,16 +335,9 @@ struct AccountTransactionsSheet: View {
                     .font(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(shortDate(entry.date))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if entry.isPaidOverride {
-                        Text("· récurrence")
-                            .font(.caption)
-                            .foregroundStyle(.secondary.opacity(0.7))
-                    }
-                }
+                Text(shortDate(entry.date))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
@@ -424,7 +366,7 @@ struct AccountTransactionsSheet: View {
 
     private func deleteEntry(_ entry: AccountEntry) {
         if entry.isTransfer {
-            // Transfert : annuler le débit sur le compte source et le crédit sur la destination
+            // Transfert : annuler le débit source et le crédit destination
             account.currentBalance += entry.amount
             if let destId = entry.transferDestinationAccountId,
                let destAccount = allAccounts.first(where: { $0.id == destId }) {
@@ -433,16 +375,16 @@ struct AccountTransactionsSheet: View {
             if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
                 context.delete(tx)
             }
-        } else if entry.isPaidOverride {
-            // Récurrence payée : annuler le montant et supprimer l'override
-            account.currentBalance -= entry.amount
-            if let override = paidOverrides.first(where: { $0.id == entry.id }) {
-                context.delete(override)
-            }
         } else {
-            // Transaction simple : annuler le montant signé et supprimer la transaction
+            // Transaction simple ou occurrence validée
             account.currentBalance -= entry.amount
             if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
+                // Si liée à une récurrence, supprimer le marqueur de saut (TransactionOverride)
+                // pour que l'occurrence redevienne "planifiée" dans PeriodDetailSheet.
+                if let recurId = tx.recurringTransactionId,
+                   let skipOverride = paidOverrides.first(where: { $0.recurringTransactionId == recurId && $0.isPaid }) {
+                    context.delete(skipOverride)
+                }
                 context.delete(tx)
             }
         }
@@ -451,11 +393,11 @@ struct AccountTransactionsSheet: View {
     // MARK: - Édition
 
     private func updateEntry(_ entry: AccountEntry, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
-        let delta         = newSignedAmount - entry.amount
+        let delta          = newSignedAmount - entry.amount
         let accountChanged = newAccountId != entry.accountId
 
         if entry.isTransfer {
-            // Transfert : ajuster le delta montant sur source et destination (pas de déplacement de compte)
+            // Transfert : ajuster le delta sur source et destination (pas de déplacement de compte)
             account.currentBalance -= delta
             if let destId = entry.transferDestinationAccountId,
                let destAccount = allAccounts.first(where: { $0.id == destId }) {
@@ -466,20 +408,10 @@ struct AccountTransactionsSheet: View {
                 tx.date   = newDate
                 tx.notes  = newNotes
             }
-        } else if entry.isPaidOverride {
-            // Override payé : delta montant uniquement, pas de déplacement de compte
-            let sourceAccount = allAccounts.first(where: { $0.id == entry.accountId }) ?? account
-            sourceAccount.currentBalance += delta
-            if let override = paidOverrides.first(where: { $0.id == entry.id }) {
-                override.actualAmount = newSignedAmount
-                override.actualDate   = newDate
-                override.notes        = newNotes
-            }
         } else {
-            // Transaction simple — supporte le déplacement de compte
+            // Transaction simple ou occurrence validée — supporte le déplacement de compte
             let sourceAccount = allAccounts.first(where: { $0.id == entry.accountId }) ?? account
             if accountChanged, let newAccount = allAccounts.first(where: { $0.id == newAccountId }) {
-                // Reversal sur l'ancien compte, application sur le nouveau
                 sourceAccount.currentBalance -= entry.amount
                 newAccount.currentBalance    += newSignedAmount
             } else {
@@ -605,7 +537,7 @@ private struct EditEntrySheet: View {
                     }
                 }
 
-                if !entry.isTransfer && !entry.isPaidOverride && accounts.count > 1 {
+                if !entry.isTransfer && accounts.count > 1 {
                     Section("Compte") {
                         Picker("Compte", selection: $selectedAccountId) {
                             ForEach(accounts) { acc in

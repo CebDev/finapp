@@ -161,8 +161,10 @@ private struct RecurringTransactionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Icône catégorie
-            if let cat = category {
+            // Logo abonnement ou icône catégorie
+            if !transaction.logo.isEmpty {
+                SubscriptionLogoImage(logo: transaction.logo, size: 38)
+            } else if let cat = category {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 38)
             } else {
                 CategoryIconBadge(icon: "square.dashed", color: "#98989D", size: 38)

@@ -28,7 +28,8 @@ let availableIcons: [IconOption] = [
 
 struct AddAccountView: View {
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss)      private var dismiss
+    @Query private var settingsArray: [UserSettings]
 
     @State private var name = ""
     @State private var type: AccountType = .chequing
@@ -259,8 +260,30 @@ struct AddAccountView: View {
             creditLimit: creditLimit,
             icon: selectedIcon
         )
-
         context.insert(account)
+
+        // Créer une transaction "Solde initial" au J1 de la période courante
+        // pour que le solde apparaisse dans PeriodDetailSheet et soit comptabilisé dans le delta.
+        let contribution = account.budgetContribution
+        if includeInBudget && contribution != 0 {
+            let periodStart: Date
+            if let s = settingsArray.first {
+                periodStart = PeriodEngine.currentPeriodStart(settings: s)
+            } else {
+                periodStart = Calendar.current.startOfDay(for: Date())
+            }
+            let openingTx = Transaction(
+                accountId:   account.id,
+                amount:      contribution,
+                date:        periodStart,
+                isPast:      true,
+                isConfirmed: true,
+                notes:       "Solde initial"
+            )
+            context.insert(openingTx)
+        }
+
+        try? context.save()
         dismiss()
     }
 

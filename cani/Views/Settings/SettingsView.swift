@@ -88,10 +88,15 @@ private struct PayPeriodSettingsView: View {
         if let settings = settingsArray.first {
             PayPeriodForm(settings: settings)
         } else {
-            ProgressView()
-                .onAppear { UserSettings.seedIfNeeded(context: context) }
-                .navigationTitle("Période de paie")
-                .navigationBarTitleDisplayMode(.inline)
+            // Cas rare : l'onboarding (PeriodSetupSheet) n'a pas encore été complété.
+            // Créer les réglages par défaut pour permettre la configuration depuis les réglages.
+            ContentUnavailableView(
+                "Périodes non configurées",
+                systemImage: "calendar.badge.exclamationmark",
+                description: Text("Accédez à l'onglet Projection pour configurer vos périodes.")
+            )
+            .navigationTitle("Période de paie")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

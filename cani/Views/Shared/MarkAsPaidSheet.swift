@@ -14,8 +14,9 @@ struct MarkAsPaidSheet: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss)      private var dismiss
-    @Query(sort: \Account.sortOrder) private var accounts:  [Account]
-    @Query                           private var overrides: [TransactionOverride]
+    @Query(sort: \Account.sortOrder) private var accounts:        [Account]
+    @Query                           private var overrides:       [TransactionOverride]
+    @Query                           private var allTransactions: [Transaction]
 
     @State private var amountString:        String  = ""
     @State private var paymentDate:         Date    = Date()
@@ -268,36 +269,50 @@ struct MarkAsPaidSheet: View {
         let parsed        = Decimal(string: rawString) ?? abs(transaction.amount)
         let signedAmount: Decimal = isIncome ? parsed : -parsed
         let normalizedOcc = Calendar.current.startOfDay(for: occurrenceDate)
+        let targetAccountId = selectedAccountId ?? transaction.accountId
 
-        if let existing = existingOverride {
-            // Si déjà payé, annuler l'effet précédent sur le compte d'origine avant d'appliquer le nouveau
-            if existing.isPaid {
-                let prevAccountId = existing.actualAccountId ?? transaction.accountId
-                let prevAmount    = existing.actualAmount ?? transaction.amount
-                if let prevAccount = accounts.first(where: { $0.id == prevAccountId }) {
-                    prevAccount.currentBalance -= prevAmount
+        // --- Nettoyage d'une validation précédente ---
+        if let existing = existingOverride, existing.isPaid {
+            // Supprimer la Transaction réelle précédente et annuler son effet sur le solde
+            if let prevTx = allTransactions.first(where: {
+                $0.recurringTransactionId == transaction.id &&
+                Calendar.current.isDate(
+                    Calendar.current.startOfDay(for: $0.date),
+                    inSameDayAs: normalizedOcc
+                )
+            }) {
+                if let prevAccount = accounts.first(where: { $0.id == prevTx.accountId }) {
+                    prevAccount.currentBalance -= prevTx.amount
                 }
+                context.delete(prevTx)
             }
-            existing.isPaid          = true
-            existing.actualAmount    = signedAmount
-            existing.actualAccountId = selectedAccountId
-            existing.actualDate      = paymentDate
-            existing.notes           = notes.isEmpty ? nil : notes
-        } else {
-            let override = TransactionOverride(
-                recurringTransactionId: transaction.id,
-                occurrenceDate:         normalizedOcc
-            )
-            override.isPaid          = true
-            override.actualAmount    = signedAmount
-            override.actualAccountId = selectedAccountId
-            override.actualDate      = paymentDate
-            override.notes           = notes.isEmpty ? nil : notes
-            context.insert(override)
+            // Supprimer l'ancien skip marker
+            context.delete(existing)
         }
 
-        // Appliquer le montant au solde du compte sélectionné
-        if let account = accounts.first(where: { $0.id == selectedAccountId }) {
+        // --- Créer la Transaction réelle (visible dans AccountTransactionsSheet) ---
+        let realTx = Transaction(
+            accountId:              targetAccountId,
+            recurringTransactionId: transaction.id,
+            amount:                 signedAmount,
+            date:                   paymentDate,
+            isPast:                 true,
+            isConfirmed:            true,
+            categoryId:             transaction.categoryId,
+            notes:                  notes.isEmpty ? nil : notes
+        )
+        context.insert(realTx)
+
+        // --- Créer le skip marker pour PeriodEngine/PeriodDetailSheet ---
+        let skipOverride = TransactionOverride(
+            recurringTransactionId: transaction.id,
+            occurrenceDate:         normalizedOcc
+        )
+        skipOverride.isPaid = true
+        context.insert(skipOverride)
+
+        // --- Appliquer le montant au solde du compte cible ---
+        if let account = accounts.first(where: { $0.id == targetAccountId }) {
             account.currentBalance += signedAmount
         }
 
@@ -308,11 +323,19 @@ struct MarkAsPaidSheet: View {
     // MARK: - Prefill
 
     private func prefill() {
-        if let override = existingOverride {
-            amountString      = formatForInput(abs(override.actualAmount ?? transaction.amount))
-            paymentDate       = override.actualDate ?? occurrenceDate
-            selectedAccountId = override.actualAccountId ?? transaction.accountId
-            notes             = override.notes ?? ""
+        // Chercher une Transaction réelle déjà validée pour cette occurrence
+        let normalizedOcc = Calendar.current.startOfDay(for: occurrenceDate)
+        if let prevTx = allTransactions.first(where: {
+            $0.recurringTransactionId == transaction.id &&
+            Calendar.current.isDate(
+                Calendar.current.startOfDay(for: $0.date),
+                inSameDayAs: normalizedOcc
+            )
+        }) {
+            amountString      = formatForInput(abs(prevTx.amount))
+            paymentDate       = prevTx.date
+            selectedAccountId = prevTx.accountId
+            notes             = prevTx.notes ?? ""
         } else {
             amountString      = formatForInput(abs(transaction.amount))
             paymentDate       = occurrenceDate

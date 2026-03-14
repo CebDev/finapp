@@ -46,14 +46,17 @@ struct PeriodEngine {
         recurring: [RecurringTransaction],
         count: Int,
         referenceDate: Date = .now,
-        overrides: [TransactionOverride] = []
+        overrides: [TransactionOverride] = [],
+        transactions: [Transaction] = []
     ) -> [PayPeriod] {
         let calendar = Calendar.current
         let refDay   = calendar.startOfDay(for: referenceDate)
 
+        // Ancrage sur le solde réel courant — budgetContribution respecte le mode d'affichage
+        // carte de crédit (creditAvailable → crédit dispo positif ; creditOwed → dette négative).
         let startingBalance = accounts
             .filter(\.includeInBudget)
-            .reduce(Decimal(0)) { $0 + $1.effectiveBalance }
+            .reduce(Decimal(0)) { $0 + $1.budgetContribution }
 
         let currentPeriodStart = periodStart(
             for: refDay,
@@ -81,6 +84,20 @@ struct PeriodEngine {
 
             let budgetAccountIds = Set(accounts.filter(\.includeInBudget).map(\.id))
 
+            // Période courante = i == 0 (on génère toujours à partir de la période qui contient refDay)
+            let isCurrentPeriodIteration = (i == 0)
+
+            // Période courante : inclure les opérations réelles dans le delta et remonter
+            // le runningBalance au solde d'ouverture (avant ces opérations, qui sont déjà
+            // dans budgetContribution). Cela donne un delta significatif visible dans PayPeriodCard.
+            if isCurrentPeriodIteration {
+                let realDelta = transactions
+                    .filter { budgetAccountIds.contains($0.accountId) && $0.date >= pStart && $0.date < exclusiveEnd }
+                    .reduce(Decimal(0)) { $0 + $1.amount }
+                delta          = realDelta
+                runningBalance -= realDelta   // ramène au solde en début de période
+            }
+
             for tx in recurring {
                 let occs = ProjectionEngine.occurrences(
                     of: tx, from: pStart, to: exclusiveEnd, calendar: calendar
@@ -93,6 +110,10 @@ struct PeriodEngine {
                         $0.recurringTransactionId == tx.id &&
                         calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedOcc)
                     }
+
+                    // Période courante : les occurrences déjà payées sont dans currentBalance — ne pas les re-compter.
+                    if isCurrentPeriodIteration && occOverride?.isPaid == true { continue }
+
                     let amount = occOverride?.actualAmount ?? tx.amount
 
                     if tx.isTransfer {
@@ -126,6 +147,18 @@ struct PeriodEngine {
         }
 
         return result
+    }
+
+    // MARK: - API publique — début de la période courante
+
+    /// Retourne le premier jour (minuit) de la période contenant `referenceDate`.
+    static func currentPeriodStart(
+        settings: UserSettings,
+        referenceDate: Date = .now
+    ) -> Date {
+        let calendar = Calendar.current
+        let refDay   = calendar.startOfDay(for: referenceDate)
+        return periodStart(for: refDay, settings: settings, calendar: calendar)
     }
 
     // MARK: - Calcul du début de la période courante

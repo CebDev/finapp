@@ -13,9 +13,6 @@
     "· payée" : {
 
     },
-    "· récurrence" : {
-
-    },
     "« %@ » sera supprimée. Les transactions passées ne seront pas affectées." : {
 
     },
@@ -47,6 +44,9 @@
 
     },
     "Abonnement" : {
+
+    },
+    "Accédez à l'onglet Projection pour configurer vos périodes." : {
 
     },
     "account.credit_balance_mode.available" : {
@@ -337,6 +337,9 @@
           }
         }
       }
+    },
+    "Actif : chaque période commence avec le solde de fin de la période précédente." : {
+
     },
     "Actif : chaque période commence avec le solde de fin de la période précédente. Inactif : chaque période est calculée de façon isolée à partir de zéro." : {
 
@@ -769,6 +772,12 @@
     "Ajoutez une transaction récurrente via le bouton +." : {
 
     },
+    "Ajoutez vos comptes avec leur solde réel, puis générez les périodes pour visualiser votre projection financière." : {
+
+    },
+    "Alerte solde bas" : {
+
+    },
     "Alerte solde bas (CAD)" : {
 
     },
@@ -812,6 +821,9 @@
 
     },
     "Aux deux semaines" : {
+
+    },
+    "Avez-vous créé tous les comptes à suivre avec leur solde initial ?" : {
 
     },
     "C" : {
@@ -1116,6 +1128,15 @@
     "Compte source" : {
 
     },
+    "Configuration des périodes" : {
+
+    },
+    "Configurez votre rythme de paie" : {
+
+    },
+    "Confirmée" : {
+
+    },
     "Confirmer la suppression" : {
 
     },
@@ -1178,6 +1199,9 @@
     "En cours" : {
 
     },
+    "EN RETARD" : {
+
+    },
     "Entrez le montant dû. Le solde sera automatiquement traité comme négatif dans la projection." : {
 
     },
@@ -1203,6 +1227,12 @@
 
     },
     "GÉNÉRAL" : {
+
+    },
+    "Générer" : {
+
+    },
+    "Générer les périodes" : {
 
     },
     "home.accounts.see_all" : {
@@ -1392,6 +1422,9 @@
         }
       }
     },
+    "Icône" : {
+
+    },
     "Jour de la semaine" : {
 
     },
@@ -1399,6 +1432,12 @@
 
     },
     "Jour du mois" : {
+
+    },
+    "Les périodes seront calculées à partir des soldes actuels de vos comptes." : {
+
+    },
+    "Les périodes seront générées à partir des soldes actuels de vos comptes. Assurez-vous d'avoir créé tous vos comptes avant de continuer." : {
 
     },
     "Marquer comme payé" : {
@@ -1446,7 +1485,13 @@
     "Optionnelle" : {
 
     },
+    "Oui, configurer les périodes" : {
+
+    },
     "Paie & alertes" : {
+
+    },
+    "Pas encore" : {
 
     },
     "Période de paie" : {
@@ -1463,6 +1508,9 @@
       }
     },
     "Période serrée — solde bas prévu" : {
+
+    },
+    "Périodes non configurées" : {
 
     },
     "Périodes serrées" : {
@@ -1485,6 +1533,9 @@
         }
       }
     },
+    "Prêt à projeter" : {
+
+    },
     "Prochaine paie" : {
 
     },
@@ -1501,6 +1552,9 @@
 
     },
     "Projection financière" : {
+
+    },
+    "Projection non configurée" : {
 
     },
     "Récurrences" : {
@@ -1785,6 +1839,9 @@
 
     },
     "v%@" : {
+
+    },
+    "Valider le paiement" : {
 
     },
     "Version" : {

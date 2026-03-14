@@ -16,52 +16,116 @@ struct PeriodDetailSheet: View {
     var carryForwardBalance: Bool = true
     var tightThreshold:     Decimal = 500
 
-    @Query(sort: \Category.sortOrder) private var allCategories:  [Category]
-    @Query                            private var allTransactions: [Transaction]
-    @Query                            private var allOverrides:    [TransactionOverride]
+    @Query(sort: \Category.sortOrder)          private var allCategories:  [Category]
+    @Query                                     private var allTransactions: [Transaction]
+    @Query                                     private var allOverrides:    [TransactionOverride]
+    @Query(sort: \RecurringTransaction.name)   private var allRecurring:    [RecurringTransaction]
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showingEditChoice:        Bool                  = false
-    @State private var editChoiceTarget:         RecurringTransaction? = nil
-    @State private var editChoiceOccurrenceDate: Date                  = Date()
-    @State private var editingRecurring:         RecurringTransaction? = nil
-    @State private var editingOccurrence:        RecurringTransaction? = nil
-    @State private var markingAsPaid:            RecurringTransaction? = nil
-    @State private var markingAsPaidDate:        Date                  = Date()
+    @State private var showingEditChoice:        Bool                    = false
+    @State private var editChoiceTarget:         RecurringTransaction?   = nil
+    @State private var editChoiceOccurrenceDate: Date                    = Date()
+    @State private var editChoicePlannedState:   PlannedTransactionState? = nil
+    @State private var editingRecurring:         RecurringTransaction?   = nil
+    @State private var editingOccurrence:        RecurringTransaction?   = nil
+    @State private var markingAsPaid:            RecurringTransaction?   = nil
+    @State private var markingAsPaidDate:        Date                    = Date()
 
     // MARK: - Computed
 
-    /// Une entrée par occurrence (pas par récurrence) — c'est le fix du bug d'affichage.
+    /// État d'une occurrence dans la période courante.
+    private enum PlannedTransactionState: Equatable {
+        case upcoming   // date > now, non confirmée → opacité réduite
+        case overdue    // date ≤ now, non confirmée → tag rouge "EN RETARD"
+    }
+
+    /// Discriminant : opération réelle confirmée vs occurrence planifiée.
+    private enum SortedEntryKind {
+        case real(Transaction)
+        case planned(RecurringTransaction, PlannedTransactionState?)
+    }
+
+    /// Une entrée par opération ou occurrence, triée par date.
     private struct SortedEntry: Identifiable {
         let id:   UUID
-        let tx:   RecurringTransaction
         let date: Date
+        let kind: SortedEntryKind
     }
 
     private var sortedTransactions: [SortedEntry] {
         let cal          = Calendar.current
+        let now          = Date()
+        let todayStart   = cal.startOfDay(for: now)
         let exclusiveEnd = cal.date(byAdding: .day, value: 1, to: period.endDate) ?? period.endDate
-        return period.transactions
-            .flatMap { tx -> [SortedEntry] in
-                ProjectionEngine.occurrences(of: tx, from: period.startDate, to: exclusiveEnd, calendar: cal)
-                    .map { SortedEntry(id: UUID(), tx: tx, date: $0) }
+
+        var entries: [SortedEntry] = []
+
+        // 1. Transactions réelles confirmées dans la période courante
+        if period.isCurrentPeriod {
+            for tx in allTransactions
+            where tx.date >= period.startDate && tx.date < exclusiveEnd {
+                entries.append(SortedEntry(id: tx.id, date: tx.date, kind: .real(tx)))
             }
-            .sorted { $0.date < $1.date }
+        }
+
+        // 2. Occurrences planifiées (récurrences) — exclut celles déjà payées (visible en .real)
+        for tx in period.transactions {
+            let occs = ProjectionEngine.occurrences(
+                of: tx, from: period.startDate, to: exclusiveEnd, calendar: cal
+            )
+            for occDate in occs {
+                let state: PlannedTransactionState?
+                if period.isCurrentPeriod {
+                    if paidOverride(for: tx, at: occDate) != nil { continue }
+                    state = cal.startOfDay(for: occDate) <= todayStart ? .overdue : .upcoming
+                } else {
+                    state = nil
+                }
+                entries.append(SortedEntry(id: UUID(), date: occDate, kind: .planned(tx, state)))
+            }
+        }
+
+        return entries.sorted { $0.date < $1.date }
     }
 
     private var totalIncome: Decimal {
-        sortedTransactions
-            .filter { $0.tx.isIncome }
-            .reduce(0) { $0 + abs(effectiveAmount(for: $1.tx, at: $1.date)) }
+        sortedTransactions.reduce(0) { total, entry in
+            switch entry.kind {
+            case .real(let tx):
+                return tx.amount > 0 ? total + tx.amount : total
+            case .planned(let tx, _):
+                return tx.isIncome ? total + abs(effectiveAmount(for: tx, at: entry.date)) : total
+            }
+        }
     }
 
     private var totalExpenses: Decimal {
-        sortedTransactions
-            .filter { !$0.tx.isIncome }
-            .reduce(0) { $0 + abs(effectiveAmount(for: $1.tx, at: $1.date)) }
+        sortedTransactions.reduce(0) { total, entry in
+            switch entry.kind {
+            case .real(let tx):
+                return tx.amount < 0 ? total + abs(tx.amount) : total
+            case .planned(let tx, _):
+                return !tx.isIncome ? total + abs(effectiveAmount(for: tx, at: entry.date)) : total
+            }
+        }
     }
 
     private func category(for tx: RecurringTransaction) -> Category? {
+        guard let id = tx.categoryId else { return nil }
+        return allCategories.first { $0.id == id }
+    }
+
+    /// Nom à afficher pour une Transaction réelle : nom de la récurrence liée, ou notes, ou fallback.
+    private func name(forReal tx: Transaction) -> String {
+        if let rid = tx.recurringTransactionId,
+           let recurring = allRecurring.first(where: { $0.id == rid }) {
+            return recurring.name
+        }
+        return tx.notes ?? "Opération"
+    }
+
+    /// Catégorie à afficher pour une Transaction réelle.
+    private func category(forReal tx: Transaction) -> Category? {
         guard let id = tx.categoryId else { return nil }
         return allCategories.first { $0.id == id }
     }
@@ -161,9 +225,9 @@ struct PeriodDetailSheet: View {
                     if sortedTransactions.isEmpty {
                         emptyState
                     } else {
-                        sectionLabel("Transactions")
+                        sectionLabel(period.isCurrentPeriod ? "Période en cours" : "Transactions")
                         ForEach(sortedTransactions) { entry in
-                            transactionRow(entry.tx, occurrenceDate: entry.date)
+                            transactionRow(entry)
                         }
                     }
 
@@ -188,6 +252,14 @@ struct PeriodDetailSheet: View {
                 isPresented: $showingEditChoice,
                 titleVisibility: .visible
             ) {
+                // "Valider" = libellé prioritaire pour overdue/upcoming dans la période courante
+                if editChoicePlannedState == .overdue || editChoicePlannedState == .upcoming {
+                    Button("Valider le paiement") {
+                        markingAsPaidDate = editChoiceOccurrenceDate
+                        markingAsPaid     = editChoiceTarget
+                        editChoiceTarget  = nil
+                    }
+                }
                 Button("Modifier toutes les occurrences à venir") {
                     editingRecurring = editChoiceTarget
                     editChoiceTarget = nil
@@ -196,11 +268,13 @@ struct PeriodDetailSheet: View {
                     editingOccurrence = editChoiceTarget
                     editChoiceTarget  = nil
                 }
-                Divider()
-                Button("Marquer comme payé") {
-                    markingAsPaidDate = editChoiceOccurrenceDate
-                    markingAsPaid     = editChoiceTarget
-                    editChoiceTarget  = nil
+                if editChoicePlannedState == nil {
+                    // Périodes futures — conserver l'option de marquer comme payé
+                    Button("Marquer comme payé") {
+                        markingAsPaidDate = editChoiceOccurrenceDate
+                        markingAsPaid     = editChoiceTarget
+                        editChoiceTarget  = nil
+                    }
                 }
                 Button("Annuler", role: .cancel) {
                     editChoiceTarget = nil
@@ -283,25 +357,82 @@ struct PeriodDetailSheet: View {
             .padding(.bottom, 4)
     }
 
-    // MARK: - Transaction row
+    // MARK: - Transaction row (dispatch)
 
-    private func transactionRow(_ tx: RecurringTransaction, occurrenceDate occ: Date) -> some View {
+    @ViewBuilder
+    private func transactionRow(_ entry: SortedEntry) -> some View {
+        switch entry.kind {
+        case .real(let tx):
+            realRow(tx)
+        case .planned(let tx, let state):
+            plannedRow(tx, occurrenceDate: entry.date, plannedState: state)
+        }
+    }
+
+    // MARK: - Opération réelle (confirmée)
+
+    private func realRow(_ tx: Transaction) -> some View {
+        let cat      = category(forReal: tx)
+        let isIncome = tx.amount > 0
+
+        return HStack(spacing: 12) {
+            if let cat {
+                CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
+            } else {
+                CategoryIconBadge(
+                    icon:  isIncome ? "arrow.down.circle.fill" : "arrow.up.circle.fill",
+                    color: isIncome ? "#34C759" : "#FF9500",
+                    size:  36
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name(forReal: tx))
+                    .font(.body)
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(shortDate(tx.date))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.secondary)
+                    Text("·")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary.opacity(0.4))
+                    Text("Confirmée")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary.opacity(0.7))
+                }
+            }
+
+            Spacer()
+
+            Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(tx.amount)))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isIncome ? Color.green : Color.orange)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 11)
+        .background(Color(.systemBackground))
+        .overlay(Divider().padding(.leading, 68), alignment: .bottom)
+    }
+
+    // MARK: - Occurrence planifiée
+
+    private func plannedRow(
+        _ tx: RecurringTransaction,
+        occurrenceDate occ: Date,
+        plannedState: PlannedTransactionState?
+    ) -> some View {
         let cat        = effectiveCategory(for: tx, at: occ)
         let amount     = effectiveAmount(for: tx, at: occ)
         let isOverride = occurrenceOverride(for: tx, at: occ) != nil
-        let isPaid     = paidOverride(for: tx, at: occ) != nil
+        let isOverdue  = plannedState == .overdue
+        let isUpcoming = plannedState == .upcoming
         let isIncome   = tx.isIncome
+
         return HStack(spacing: 12) {
-            // Icône : checkmark vert si payé, sinon badge catégorie normal
-            if isPaid {
-                ZStack {
-                    Circle()
-                        .fill(Color.green.opacity(0.15))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Color.green)
-                }
+            if !tx.logo.isEmpty {
+                SubscriptionLogoImage(logo: tx.logo, size: 36)
             } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
@@ -310,25 +441,30 @@ struct PeriodDetailSheet: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(tx.name)
-                    .font(isPaid ? .body.italic() : .body)
-                    .foregroundStyle(isPaid ? Color.secondary : Color.primary)
+                    .font(.body)
+                    .foregroundStyle(Color.primary)
                     .lineLimit(1)
                 HStack(spacing: 4) {
-                    // Date d'occurrence — information principale
                     Text(shortDate(occ))
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(isPaid ? Color.secondary.opacity(0.7) : Color.secondary)
+                        .foregroundStyle(Color.secondary)
                     Text("·")
                         .font(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.4))
                     Text(tx.frequency.labelFR)
                         .font(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.7))
-                    if isPaid {
-                        Text("· payée")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.green)
-                    } else if isOverride {
+
+                    if isOverdue {
+                        // Exception assumée à la règle orange/amber — action requise de l'utilisateur
+                        Text("EN RETARD")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    } else if isOverride && !isUpcoming {
                         Text("· modifiée")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.indigo)
@@ -340,9 +476,9 @@ struct PeriodDetailSheet: View {
 
             HStack(spacing: 8) {
                 Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(amount)))
-                    .font(isPaid ? .subheadline.weight(.semibold).italic() : .subheadline.weight(.semibold))
-                    .foregroundStyle(isPaid ? Color.secondary : (isIncome ? Color.green : Color.orange))
-                if !isPaid {
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isIncome ? Color.green : Color.orange)
+                if plannedState == nil {
                     Image(systemName: "pencil")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -352,15 +488,13 @@ struct PeriodDetailSheet: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 11)
         .background(Color(.systemBackground))
-        .overlay(
-            Divider()
-                .padding(.leading, 68),
-            alignment: .bottom
-        )
+        .overlay(Divider().padding(.leading, 68), alignment: .bottom)
+        .opacity(isUpcoming ? 0.55 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture {
             editChoiceTarget         = tx
             editChoiceOccurrenceDate = occ
+            editChoicePlannedState   = plannedState
             showingEditChoice        = true
         }
     }

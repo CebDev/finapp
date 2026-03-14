@@ -9,13 +9,19 @@ import SwiftUI
 import SwiftData
 
 struct ProjectionView: View {
-    @Query(sort: \Account.sortOrder)         private var accounts:      [Account]
-    @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
-    @Query                                   private var settingsArray: [UserSettings]
-    @Query                                   private var allOverrides:  [TransactionOverride]
+    @Query(sort: \Account.sortOrder)         private var accounts:         [Account]
+    @Query(sort: \RecurringTransaction.name) private var recurring:        [RecurringTransaction]
+    @Query                                   private var settingsArray:    [UserSettings]
+    @Query                                   private var allOverrides:     [TransactionOverride]
+    @Query(
+        filter: #Predicate<Transaction> { $0.isPast },
+        sort:   \Transaction.date
+    )                                        private var allTransactions:  [Transaction]
 
-    @State private var showTightOnly:  Bool       = false
-    @State private var selectedPeriod: PayPeriod? = nil
+    @State private var showTightOnly:             Bool       = false
+    @State private var selectedPeriod:            PayPeriod? = nil
+    @State private var showingSetupConfirmation:  Bool       = false
+    @State private var showingPeriodSetup:        Bool       = false
 
     // MARK: - Computed
 
@@ -28,11 +34,12 @@ struct ProjectionView: View {
     private var allPeriods: [PayPeriod] {
         guard let s = settings else { return [] }
         return PeriodEngine.generate(
-            settings:  s,
-            accounts:  accounts,
-            recurring: recurring,
-            count:     13,
-            overrides: allOverrides
+            settings:     s,
+            accounts:     accounts,
+            recurring:    recurring,
+            count:        13,
+            overrides:    allOverrides,
+            transactions: allTransactions
         )
     }
 
@@ -46,39 +53,45 @@ struct ProjectionView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    headerCard
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
+            Group {
+                if settings == nil {
+                    notConfiguredState
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            headerCard
+                                .padding(.horizontal, 16)
+                                .padding(.top, 4)
 
-                    chartSection
+                            chartSection
 
-                    if filteredPeriods.isEmpty {
-                        emptyTightState
-                    } else {
-                        periodsSection
+                            if filteredPeriods.isEmpty {
+                                emptyTightState
+                            } else {
+                                periodsSection
+                            }
+                        }
+                        .padding(.bottom, 28)
                     }
                 }
-                .padding(.bottom, 28)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Projection")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showTightOnly.toggle()
-                    } label: {
-                        Image(systemName: showTightOnly
-                              ? "exclamationmark.triangle.fill"
-                              : "exclamationmark.triangle")
-                            .fontWeight(.medium)
-                            .foregroundStyle(showTightOnly
-                                             ? Color(red: 1.0, green: 0.7, blue: 0.0)
-                                             : Color.primary)
+                if settings != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showTightOnly.toggle() } label: {
+                            Image(systemName: showTightOnly
+                                  ? "exclamationmark.triangle.fill"
+                                  : "exclamationmark.triangle")
+                                .fontWeight(.medium)
+                                .foregroundStyle(showTightOnly
+                                                 ? Color(red: 1.0, green: 0.7, blue: 0.0)
+                                                 : Color.primary)
+                        }
+                        .accessibilityLabel("Serrées seulement")
                     }
-                    .accessibilityLabel("Serrées seulement")
                 }
             }
             .sheet(item: $selectedPeriod) { period in
@@ -89,7 +102,68 @@ struct ProjectionView: View {
                     tightThreshold:      settings?.tightThreshold ?? 500
                 )
             }
+            .sheet(isPresented: $showingPeriodSetup) {
+                PeriodSetupSheet()
+            }
+            .confirmationDialog(
+                "Avez-vous créé tous les comptes à suivre avec leur solde initial ?",
+                isPresented: $showingSetupConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Oui, configurer les périodes") {
+                    showingPeriodSetup = true
+                }
+                Button("Pas encore", role: .cancel) { }
+            } message: {
+                Text("Les périodes seront calculées à partir des soldes actuels de vos comptes.")
+            }
         }
+    }
+
+    // MARK: - Not configured state
+
+    private var notConfiguredState: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 24) {
+                ZStack {
+                    Circle()
+                        .fill(Color.indigo.opacity(0.10))
+                        .frame(width: 96, height: 96)
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundStyle(.indigo)
+                }
+
+                VStack(spacing: 8) {
+                    Text("Projection non configurée")
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+                    Text("Ajoutez vos comptes avec leur solde réel, puis générez les périodes pour visualiser votre projection financière.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+
+                Button {
+                    showingSetupConfirmation = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                        Text("Générer les périodes")
+                    }
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 28)
+                    .background(Color.indigo)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Header card

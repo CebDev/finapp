@@ -27,6 +27,23 @@ class Account {
     var createdAt: Date = Date()
     var sortOrder: Int = 0
 
+    /// Contribution au solde de départ de la projection budgétaire.
+    /// Diffère de effectiveBalance pour les cartes de crédit en mode creditOwed :
+    /// la dette est déjà négative dans currentBalance → pas besoin de l'inverser.
+    var budgetContribution: Decimal {
+        switch type {
+        case .creditCard:
+            switch creditBalanceDisplayMode {
+            case .creditAvailable:
+                return effectiveBalance   // crédit disponible (positif)
+            case .creditOwed:
+                return currentBalance     // dette (négatif) réduit le budget
+            }
+        default:
+            return currentBalance
+        }
+    }
+
     /// Solde effectif selon le type de compte et le mode d'affichage choisi.
     /// C'est cette valeur qui doit être utilisée partout pour l'affichage et la projection.
     var effectiveBalance: Decimal {

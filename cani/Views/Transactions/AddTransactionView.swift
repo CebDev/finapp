@@ -74,6 +74,7 @@ struct AddTransactionView: View {
     @State private var noEndDate:      Bool      = true
     @State private var endDate:        Date      = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
     @State private var isSubscription: Bool      = false
+    @State private var selectedLogo:   String    = ""
 
     private var isEditing: Bool { editingRecurring != nil }
     private var isEditingOccurrence: Bool { editingOccurrenceRecurring != nil }
@@ -256,6 +257,13 @@ struct AddTransactionView: View {
                 if transactionType != .transfer {
                     Toggle("Abonnement", isOn: $isSubscription)
                         .tint(.indigo)
+                        .onChange(of: isSubscription) { _, on in
+                            if !on { selectedLogo = "" }
+                        }
+
+                    if isSubscription {
+                        logoPickerRow
+                    }
                 }
 
                 Toggle("Sans date de fin", isOn: $noEndDate)
@@ -272,6 +280,68 @@ struct AddTransactionView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Logo picker
+
+    private var logoPickerRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Icône")
+                    .foregroundStyle(.primary)
+                Spacer()
+                if selectedLogo.isEmpty {
+                    Text("Aucune")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                } else {
+                    SubscriptionLogoImage(logo: selectedLogo, size: 28)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    // Option "Aucune"
+                    Button {
+                        selectedLogo = ""
+                    } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(.secondarySystemGroupedBackground))
+                                .frame(width: 48, height: 48)
+                            Image(systemName: "slash.circle")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.secondary)
+                        }
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(selectedLogo.isEmpty ? Color.indigo : Color.clear, lineWidth: 2)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(allSubscriptionLogos, id: \.self) { logo in
+                        Button {
+                            selectedLogo = logo
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(.secondarySystemGroupedBackground))
+                                    .frame(width: 48, height: 48)
+                                SubscriptionLogoImage(logo: logo, size: 36)
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(selectedLogo == logo ? Color.indigo : Color.clear, lineWidth: 2)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Computed
@@ -339,6 +409,7 @@ struct AddTransactionView: View {
             existing.dayOfMonth     = frequency == .monthly  ? dayOfMonth : nil
             existing.categoryId     = selectedCategoryId
             existing.isSubscription = isSubscription
+            existing.logo           = selectedLogo
             existing.accountId      = accountId
             existing.isTransfer     = false
             existing.transferDestinationAccountId = nil
@@ -369,7 +440,8 @@ struct AddTransactionView: View {
                 dayOfMonth:     frequency == .monthly  ? dayOfMonth : nil,
                 isIncome:       isIncome,
                 categoryId:     selectedCategoryId,
-                isSubscription: isSubscription
+                isSubscription: isSubscription,
+                logo:           selectedLogo
             )
             context.insert(recurring)
 
@@ -523,6 +595,7 @@ struct AddTransactionView: View {
             dayOfWeek          = tx.dayOfWeek  ?? 1
             dayOfMonth         = tx.dayOfMonth ?? 1
             isSubscription     = tx.isSubscription
+            selectedLogo       = tx.logo
             noEndDate          = tx.endDate == nil
             if let end = tx.endDate { endDate = end }
 

@@ -51,11 +51,12 @@ struct HomeView: View {
     private var allPeriods: [PayPeriod] {
         guard let s = settings else { return [] }
         return PeriodEngine.generate(
-            settings:  s,
-            accounts:  accounts,
-            recurring: recurring,
-            count:     5,
-            overrides: allOverrides
+            settings:     s,
+            accounts:     accounts,
+            recurring:    recurring,
+            count:        5,
+            overrides:    allOverrides,
+            transactions: allPastTransactions
         )
     }
 

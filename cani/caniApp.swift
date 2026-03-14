@@ -29,7 +29,8 @@ struct caniApp: App {
         //let config = ModelConfiguration(schema: schema)
         container = try! ModelContainer(for: schema, configurations: config)
         CategoryService.seedIfNeeded(context: container.mainContext)
-        UserSettings.seedIfNeeded(context: container.mainContext)
+        // UserSettings est créé lors de la première configuration explicite par l'utilisateur
+        // (PeriodSetupSheet), pas automatiquement au démarrage.
     }
 
     var body: some Scene {
