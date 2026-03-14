@@ -8,14 +8,85 @@
 import SwiftUI
 
 struct ContentView: View {
+    @AppStorage("selectedTab") private var selectedTab: Int = 0
+    @State private var showingAddTransaction = false
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView(selection: $selectedTab) {
+            HomeView()
+                .tabItem { Label("tab.home", systemImage: "house.fill") }
+                .tag(0)
+
+            ProjectionView()
+                .tabItem { Label("tab.projection", systemImage: "chart.line.uptrend.xyaxis") }
+                .tag(1)
+
+            // Tab + : jamais affiché — intercepté par onChange pour ouvrir la sheet
+            Color.clear
+                .tabItem { Label("tab.add", systemImage: "plus.circle.fill") }
+                .tag(2)
+
+            AbonnementsView()
+                .tabItem { Label("tab.subscriptions", systemImage: "rectangle.stack.fill") }
+                .tag(3)
+
+            ObjectifsView()
+                .tabItem { Label("tab.goals", systemImage: "target") }
+                .tag(4)
         }
-        .padding()
+        .onChange(of: selectedTab) { oldValue, newValue in
+            if newValue == 2 {
+                selectedTab = oldValue
+                showingAddTransaction = true
+            }
+        }
+        .sheet(isPresented: $showingAddTransaction) {
+            AddTransactionView()
+        }
+    }
+}
+
+// MARK: - Placeholders
+
+struct AccueilView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                String(localized: "tab.home"),
+                systemImage: "house.fill",
+                description: Text("placeholder.coming_soon")
+            )
+            .navigationTitle(String(localized: "tab.home"))
+            .navigationBarTitleDisplayMode(.large)
+        }
+    }
+}
+
+struct AbonnementsView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                String(localized: "tab.subscriptions"),
+                systemImage: "rectangle.stack.fill",
+                description: Text("placeholder.coming_soon")
+            )
+            .navigationTitle(String(localized: "tab.subscriptions"))
+            .navigationBarTitleDisplayMode(.large)
+        }
+    }
+}
+
+struct ObjectifsView: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                String(localized: "tab.goals"),
+                systemImage: "target",
+                description: Text("placeholder.coming_soon")
+            )
+            .navigationTitle(String(localized: "tab.goals"))
+            .navigationBarTitleDisplayMode(.large)
+        }
     }
 }
 
