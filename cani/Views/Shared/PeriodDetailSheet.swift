@@ -180,6 +180,12 @@ struct PeriodDetailSheet: View {
         }
     }
 
+    /// Vrai si la transaction sélectionnée a au moins une occurrence après la date de l'occurrence en cours.
+    private var editChoiceHasFutureOccurrences: Bool {
+        guard let tx = editChoiceTarget else { return false }
+        return DateUtils.nextOccurrence(from: tx, after: editChoiceOccurrenceDate) != nil
+    }
+
     // MARK: - Mode isolé (carryForwardBalance == false)
 
     /// Solde recalculé sans report : revenus − dépenses de la période uniquement.
@@ -282,9 +288,11 @@ struct PeriodDetailSheet: View {
                         editChoiceTarget  = nil
                     }
                 }
-                Button("Modifier toutes les occurrences à venir") {
-                    editingRecurring = editChoiceTarget
-                    editChoiceTarget = nil
+                if editChoiceHasFutureOccurrences {
+                    Button("Modifier toutes les occurrences à venir") {
+                        editingRecurring = editChoiceTarget
+                        editChoiceTarget = nil
+                    }
                 }
                 Button("Modifier uniquement cette occurrence") {
                     editingOccurrence = editChoiceTarget

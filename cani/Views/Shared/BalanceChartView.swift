@@ -22,8 +22,12 @@ struct BalanceChartView: View {
     /// Quand fourni, remplace le `previousBalance` de la période focalisée dans le premier point
     /// de la courbe — utilisé par PeriodDetailSheet en mode « vue isolée » (carryForwardBalance = false).
     var overridePreviousBalance: Decimal? = nil
+    /// Domaine X personnalisé (principalement pour Home) en mode mini.
+    var miniXDomainOverride: ClosedRange<Date>? = nil
     /// Seuil en dessous duquel une période est « serrée » (amber). Défaut : 500 $ CAD.
     var tightThreshold: Decimal = 500
+    /// Solde actuel des comptes inclus — si fourni, affiché dans l'annotation de la ligne « Aujourd'hui ».
+    var todayBalance: Decimal? = nil
 
     // MARK: - Couleurs d'état
 
@@ -51,6 +55,8 @@ struct BalanceChartView: View {
             let hi = min(periods.count - 1, idx + 1)
             return Array(periods[lo...hi])
         }
+        // Mode mini avec domaine personnalisé (Home): utiliser toutes les périodes passées.
+        if miniXDomainOverride != nil { return periods }
         // Mode plein année : tout
         if showFullYear { return periods }
         // Mode mini : J-2 à J+2 centré sur la période courante
@@ -103,10 +109,12 @@ struct BalanceChartView: View {
         return pts
     }
 
-    /// Domaine X forcé pour le mode mini : fenêtre symétrique autour de la période courante.
-    /// [currentPeriod.startDate − 14 j, currentPeriod.endDate + 14 j]
-    /// Garantit que la ligne « Aujourd'hui » tombe au centre visuel du graphique.
+    /// Domaine X forcé pour le mode mini.
+    /// Priorité: `miniXDomainOverride` (si fourni), sinon fenêtre symétrique autour de la période courante.
     private var miniXDomain: ClosedRange<Date> {
+        if let override = miniXDomainOverride {
+            return override
+        }
         let cal = Calendar.current
         if let current = periods.first(where: \.isCurrentPeriod) {
             let start = cal.date(byAdding: .day, value: -14, to: current.startDate) ?? current.startDate
@@ -277,14 +285,16 @@ struct BalanceChartView: View {
     }
 
     /// Ligne verticale « Aujourd'hui » — présente dans tous les graphiques.
-    /// Le tag texte n'est affiché qu'en mode showFullYear pour ne pas surcharger le mini.
+    /// Affiche un badge date + solde si `todayBalance` est fourni, sinon « Aujourd'hui » en mode plein.
     @ChartContentBuilder
     private func todayRule() -> some ChartContent {
         RuleMark(x: .value("Aujourd'hui", Date.now))
             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
             .foregroundStyle(Color.secondary.opacity(0.6))
-            .annotation(position: .top, spacing: 2) {
-                if showFullYear {
+            .annotation(position: .top, alignment: .center, spacing: 4) {
+                if let balance = todayBalance {
+                    todayBadge(balance: balance)
+                } else if showFullYear {
                     Text("Aujourd'hui")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -294,6 +304,27 @@ struct BalanceChartView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
+    }
+
+    @ViewBuilder
+    private func todayBadge(balance: Decimal) -> some View {
+        let day   = Calendar.current.component(.day,   from: .now)
+        let month = Calendar.current.component(.month, from: .now)
+        VStack(spacing: 1) {
+            Text("\(day)/\(month)")
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(CurrencyFormatter.shared.format(balance))
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
     }
 
     // MARK: - Axes

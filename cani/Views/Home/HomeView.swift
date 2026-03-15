@@ -60,6 +60,37 @@ struct HomeView: View {
         )
     }
 
+    /// Fenêtre du graphique Évolution: 1 période avant + période courante + 3 périodes après.
+    private var evolutionPeriods: [PayPeriod] {
+        guard let s = settings else { return [] }
+        let calendar = Calendar.current
+        let currentStart = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
+        let startReference: Date
+
+        if s.payPeriodFrequency == .biweekly {
+            startReference = calendar.date(byAdding: .day, value: -14, to: currentStart) ?? currentStart
+        } else {
+            startReference = calendar.date(byAdding: .month, value: -1, to: currentStart) ?? currentStart
+        }
+
+        return PeriodEngine.generate(
+            settings:     s,
+            accounts:     accounts,
+            recurring:    recurring,
+            count:        5,
+            referenceDate: startReference,
+            overrides:    allOverrides,
+            transactions: allPastTransactions
+        )
+    }
+
+    private var evolutionXDomain: ClosedRange<Date> {
+        if let first = evolutionPeriods.first, let last = evolutionPeriods.last {
+            return first.startDate...last.endDate
+        }
+        return Date.distantPast...Date.distantFuture
+    }
+
     /// Période courante + 2 suivantes, max 3.
     private var upcomingPeriods: [PayPeriod] {
         let idx = allPeriods.firstIndex(where: \.isCurrentPeriod) ?? 0
@@ -340,9 +371,11 @@ struct HomeView: View {
             }
 
             BalanceChartView(
-                periods:        allPeriods,
-                showFullYear:   false,
-                tightThreshold: settings?.tightThreshold ?? 500
+                periods:             evolutionPeriods,
+                showFullYear:        false,
+                miniXDomainOverride: evolutionXDomain,
+                tightThreshold:      settings?.tightThreshold ?? 500,
+                todayBalance:        totalBalance
             )
             .padding(.horizontal, 16)
         }

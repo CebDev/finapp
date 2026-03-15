@@ -185,8 +185,8 @@ struct AccountTransactionsSheet: View {
                 Button("Annuler", role: .cancel) { tappedEntry = nil }
             }
             .sheet(item: $editingEntry) { entry in
-                EditEntrySheet(entry: entry, accounts: allAccounts, categories: categories) { newSignedAmount, newDate, newNotes, newAccountId in
-                    updateEntry(entry, newSignedAmount: newSignedAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId)
+                EditEntrySheet(entry: entry, accounts: allAccounts, categories: categories) { newSignedAmount, newDate, newNotes, newAccountId, newCategoryId in
+                    updateEntry(entry, newSignedAmount: newSignedAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId, newCategoryId: newCategoryId)
                 }
             }
         }
@@ -392,7 +392,7 @@ struct AccountTransactionsSheet: View {
 
     // MARK: - Édition
 
-    private func updateEntry(_ entry: AccountEntry, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
+    private func updateEntry(_ entry: AccountEntry, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID, newCategoryId: UUID?) {
         let delta          = newSignedAmount - entry.amount
         let accountChanged = newAccountId != entry.accountId
 
@@ -404,9 +404,10 @@ struct AccountTransactionsSheet: View {
                 destAccount.currentBalance += delta
             }
             if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
-                tx.amount = newSignedAmount
-                tx.date   = newDate
-                tx.notes  = newNotes
+                tx.amount     = newSignedAmount
+                tx.date       = newDate
+                tx.notes      = newNotes
+                tx.categoryId = newCategoryId
             }
         } else {
             // Transaction simple ou occurrence validée — supporte le déplacement de compte
@@ -418,10 +419,11 @@ struct AccountTransactionsSheet: View {
                 sourceAccount.currentBalance += delta
             }
             if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
-                tx.amount    = newSignedAmount
-                tx.date      = newDate
-                tx.notes     = newNotes
-                tx.accountId = newAccountId
+                tx.amount     = newSignedAmount
+                tx.date       = newDate
+                tx.notes      = newNotes
+                tx.accountId  = newAccountId
+                tx.categoryId = newCategoryId
             }
         }
     }
@@ -476,25 +478,27 @@ private struct EditEntrySheet: View {
     let entry:      AccountEntry
     let accounts:   [Account]
     let categories: [Category]
-    let onSave:     (Decimal, Date, String?, UUID) -> Void
+    let onSave:     (Decimal, Date, String?, UUID, UUID?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var amountFocused: Bool
 
-    @State private var amountText:        String
-    @State private var date:              Date
-    @State private var notes:             String
-    @State private var selectedAccountId: UUID
+    @State private var amountText:          String
+    @State private var date:                Date
+    @State private var notes:               String
+    @State private var selectedAccountId:   UUID
+    @State private var selectedCategoryId:  UUID?
 
-    init(entry: AccountEntry, accounts: [Account], categories: [Category], onSave: @escaping (Decimal, Date, String?, UUID) -> Void) {
+    init(entry: AccountEntry, accounts: [Account], categories: [Category], onSave: @escaping (Decimal, Date, String?, UUID, UUID?) -> Void) {
         self.entry      = entry
         self.accounts   = accounts
         self.categories = categories
         self.onSave     = onSave
-        _amountText        = State(initialValue: "\(abs(entry.amount))")
-        _date              = State(initialValue: entry.date)
-        _notes             = State(initialValue: "")
-        _selectedAccountId = State(initialValue: entry.accountId)
+        _amountText          = State(initialValue: "\(abs(entry.amount))")
+        _date                = State(initialValue: entry.date)
+        _notes               = State(initialValue: "")
+        _selectedAccountId   = State(initialValue: entry.accountId)
+        _selectedCategoryId  = State(initialValue: entry.categoryId)
     }
 
     private var parsedAmount: Decimal? {
@@ -553,6 +557,17 @@ private struct EditEntrySheet: View {
                         .labelsHidden()
                 }
 
+                if !entry.isTransfer && !categories.isEmpty {
+                    Section("Catégorie") {
+                        Picker("Catégorie", selection: $selectedCategoryId) {
+                            Text("Aucune").tag(UUID?.none)
+                            ForEach(categories) { cat in
+                                Label(cat.name, systemImage: cat.icon).tag(UUID?.some(cat.id))
+                            }
+                        }
+                    }
+                }
+
                 Section("Notes") {
                     TextField("Facultatif", text: $notes, axis: .vertical)
                         .lineLimit(3)
@@ -571,7 +586,7 @@ private struct EditEntrySheet: View {
                     Button {
                         guard let raw = parsedAmount else { return }
                         let signed = entry.isTransfer ? raw : (isIncome ? raw : -raw)
-                        onSave(signed, date, notes.isEmpty ? nil : notes, selectedAccountId)
+                        onSave(signed, date, notes.isEmpty ? nil : notes, selectedAccountId, selectedCategoryId)
                         dismiss()
                     } label: {
                         Image(systemName: "checkmark").fontWeight(.semibold)
