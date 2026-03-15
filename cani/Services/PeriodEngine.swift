@@ -25,6 +25,8 @@ struct PayPeriod: Identifiable {
     let isCurrentPeriod: Bool
     /// Récurrences ayant au moins une occurrence dans cette période
     let transactions: [RecurringTransaction]
+    /// Solde projeté pour chaque jour de la période (un point par jour de startDate à endDate).
+    let dailyBalances: [(date: Date, balance: Decimal)]
 }
 
 // MARK: - PeriodEngine
@@ -47,7 +49,8 @@ struct PeriodEngine {
         count: Int,
         referenceDate: Date = .now,
         overrides: [TransactionOverride] = [],
-        transactions: [Transaction] = []
+        transactions: [Transaction] = [],
+        dailySamplingStep: Int = 1
     ) -> [PayPeriod] {
         let calendar = Calendar.current
         let refDay   = calendar.startOfDay(for: referenceDate)
@@ -79,8 +82,9 @@ struct PeriodEngine {
             let pEnd = calendar.date(byAdding: .day, value: -1, to: exclusiveEnd) ?? exclusiveEnd
 
             // Accumulation via ProjectionEngine
-            var activeTx: [RecurringTransaction] = []
+            var activeTx:  [RecurringTransaction] = []
             var delta:     Decimal               = 0
+            var dayAmounts: [Date: Decimal]      = [:]
 
             let budgetAccountIds = Set(accounts.filter(\.includeInBudget).map(\.id))
 
@@ -91,11 +95,17 @@ struct PeriodEngine {
             // le runningBalance au solde d'ouverture (avant ces opérations, qui sont déjà
             // dans budgetContribution). Cela donne un delta significatif visible dans PayPeriodCard.
             if isCurrentPeriodIteration {
-                let realDelta = transactions
-                    .filter { budgetAccountIds.contains($0.accountId) && $0.date >= pStart && $0.date < exclusiveEnd }
-                    .reduce(Decimal(0)) { $0 + $1.amount }
+                let realTransactions = transactions.filter {
+                    budgetAccountIds.contains($0.accountId) && $0.date >= pStart && $0.date < exclusiveEnd
+                }
+                let realDelta = realTransactions.reduce(Decimal(0)) { $0 + $1.amount }
                 delta          = realDelta
                 runningBalance -= realDelta   // ramène au solde en début de période
+                // Alimenter dayAmounts avec les transactions réelles
+                for tx in realTransactions {
+                    let day = calendar.startOfDay(for: tx.date)
+                    dayAmounts[day, default: 0] += tx.amount
+                }
             }
 
             for tx in recurring {
@@ -123,10 +133,11 @@ struct PeriodEngine {
                         let sourceInBudget = budgetAccountIds.contains(tx.accountId)
                         let destInBudget   = tx.transferDestinationAccountId.map { budgetAccountIds.contains($0) } ?? false
                         // amount > 0 (montant transféré) ; source débité, destination crédité
-                        if sourceInBudget  { delta -= amount }
-                        if destInBudget    { delta += amount }
+                        if sourceInBudget  { delta -= amount; dayAmounts[normalizedOcc, default: 0] -= amount }
+                        if destInBudget    { delta += amount; dayAmounts[normalizedOcc, default: 0] += amount }
                     } else {
                         delta += amount
+                        dayAmounts[normalizedOcc, default: 0] += amount
                     }
                 }
             }
@@ -134,6 +145,23 @@ struct PeriodEngine {
             let previous       = runningBalance
             runningBalance    += delta
             let isCurrent      = pStart <= refDay && refDay <= pEnd
+
+            // Solde journalier : un point tous les `dailySamplingStep` jours de pStart à pEnd.
+            // On accumule les montants des jours intermédiaires pour ne pas les perdre.
+            let step = max(1, dailySamplingStep)
+            var runningDailyBalance = previous
+            var dailySnapshots: [(date: Date, balance: Decimal)] = []
+            var day = pStart
+            var dayIndex = 0
+            while day <= pEnd {
+                runningDailyBalance += dayAmounts[day, default: 0]
+                if dayIndex % step == 0 || day == pEnd {
+                    dailySnapshots.append((date: day, balance: runningDailyBalance))
+                }
+                guard let next = calendar.date(byAdding: .day, value: 1, to: day), next > day else { break }
+                day = next
+                dayIndex += 1
+            }
 
             result.append(PayPeriod(
                 id:               UUID(),
@@ -144,7 +172,8 @@ struct PeriodEngine {
                 delta:            delta,
                 isTight:          runningBalance < settings.tightThreshold,
                 isCurrentPeriod:  isCurrent,
-                transactions:     activeTx
+                transactions:     activeTx,
+                dailyBalances:    dailySnapshots
             ))
         }
 

@@ -10,9 +10,20 @@
 		6AB4BCEE2F641D9D007F3B1B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6AB4BCED2F641D9D007F3B1B /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		6AB4BD632F670772007F3B1B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6AB4BCAC2F636518007F3B1B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6AB4BCB32F636518007F3B1B;
+			remoteInfo = cani;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		6AB4BCB42F636518007F3B1B /* cani.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cani.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6AB4BCED2F641D9D007F3B1B /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		6AB4BD5F2F670772007F3B1B /* caniTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = caniTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -21,10 +32,22 @@
 			path = cani;
 			sourceTree = "<group>";
 		};
+		6AB4BD602F670772007F3B1B /* caniTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = caniTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		6AB4BCB12F636518007F3B1B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6AB4BD5C2F670772007F3B1B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -39,6 +62,7 @@
 			children = (
 				6AB4BCED2F641D9D007F3B1B /* Localizable.xcstrings */,
 				6AB4BCB62F636518007F3B1B /* cani */,
+				6AB4BD602F670772007F3B1B /* caniTests */,
 				6AB4BCB52F636518007F3B1B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -47,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				6AB4BCB42F636518007F3B1B /* cani.app */,
+				6AB4BD5F2F670772007F3B1B /* caniTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +101,29 @@
 			productReference = 6AB4BCB42F636518007F3B1B /* cani.app */;
 			productType = "com.apple.product-type.application";
 		};
+		6AB4BD5E2F670772007F3B1B /* caniTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6AB4BD652F670772007F3B1B /* Build configuration list for PBXNativeTarget "caniTests" */;
+			buildPhases = (
+				6AB4BD5B2F670772007F3B1B /* Sources */,
+				6AB4BD5C2F670772007F3B1B /* Frameworks */,
+				6AB4BD5D2F670772007F3B1B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6AB4BD642F670772007F3B1B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				6AB4BD602F670772007F3B1B /* caniTests */,
+			);
+			name = caniTests;
+			packageProductDependencies = (
+			);
+			productName = caniTests;
+			productReference = 6AB4BD5F2F670772007F3B1B /* caniTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +136,10 @@
 				TargetAttributes = {
 					6AB4BCB32F636518007F3B1B = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					6AB4BD5E2F670772007F3B1B = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 6AB4BCB32F636518007F3B1B;
 					};
 				};
 			};
@@ -107,6 +159,7 @@
 			projectRoot = "";
 			targets = (
 				6AB4BCB32F636518007F3B1B /* cani */,
+				6AB4BD5E2F670772007F3B1B /* caniTests */,
 			);
 		};
 /* End PBXProject section */
@@ -120,6 +173,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6AB4BD5D2F670772007F3B1B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -130,7 +190,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6AB4BD5B2F670772007F3B1B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		6AB4BD642F670772007F3B1B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6AB4BCB32F636518007F3B1B /* cani */;
+			targetProxy = 6AB4BD632F670772007F3B1B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		6AB4BCBD2F63651A007F3B1B /* Debug */ = {
@@ -324,6 +399,48 @@
 			};
 			name = Release;
 		};
+		6AB4BD662F670772007F3B1B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G848C23XDQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cebdev.caniTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/cani.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/cani";
+			};
+			name = Debug;
+		};
+		6AB4BD672F670772007F3B1B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G848C23XDQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = cebdev.caniTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/cani.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/cani";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -341,6 +458,15 @@
 			buildConfigurations = (
 				6AB4BCC02F63651A007F3B1B /* Debug */,
 				6AB4BCC12F63651A007F3B1B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6AB4BD652F670772007F3B1B /* Build configuration list for PBXNativeTarget "caniTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6AB4BD662F670772007F3B1B /* Debug */,
+				6AB4BD672F670772007F3B1B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

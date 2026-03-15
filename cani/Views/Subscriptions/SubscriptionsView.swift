@@ -280,7 +280,7 @@ private struct CalendarCard: View {
     let onTxTap:         (RecurringTransaction) -> Void
 
     private let columns       = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
-    private let weekdayLabels = ["D", "L", "M", "M", "J", "V", "S"]
+    private let weekdayLabels = ["D", "L", "Ma", "Me", "J", "V", "S"]
 
     private var totalCells: Int {
         let raw = firstDayOffset + daysInMonth

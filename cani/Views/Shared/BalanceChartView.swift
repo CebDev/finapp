@@ -29,6 +29,11 @@ struct BalanceChartView: View {
     /// Solde actuel des comptes inclus — si fourni, affiché dans l'annotation de la ligne « Aujourd'hui ».
     var todayBalance: Decimal? = nil
 
+    // MARK: - État scrubbing
+
+    @State private var scrubbedDate:    Date?   = nil
+    @State private var scrubbedBalance: Double? = nil
+
     // MARK: - Couleurs d'état
 
     private var softRedColor: Color { Color(red: 0.85, green: 0.28, blue: 0.28) }
@@ -38,12 +43,12 @@ struct BalanceChartView: View {
 
     /// Un point de données = solde à un instant précis dans le temps.
     private struct ChartPoint: Identifiable {
-        let id:           Date   // stable — pas de UUID recréé à chaque render
-        let date:         Date
-        let balance:      Double
-        let isTight:      Bool
-        let isNegative:   Bool
-        let isEndOfPeriod: Bool  // vrai sur les points de fin de période (pour les dots)
+        let id:             Date   // stable — pas de UUID recréé à chaque render
+        let date:           Date
+        let balance:        Double
+        let isTight:        Bool
+        let isNegative:     Bool
+        let isPeriodEnd:  Bool   // vrai sur le dernier jour de chaque période (pour les dots)
     }
 
     /// Périodes visibles selon le mode actif.
@@ -66,44 +71,40 @@ struct BalanceChartView: View {
         return Array(periods[lo...hi])
     }
 
-    /// Points de la courbe : deux points par période — solde de début ET solde de fin.
-    /// Cela produit une courbe en escalier réaliste : la ligne monte/descend à l'intérieur
-    /// de chaque période selon les flux réels, plutôt qu'une interpolation entre périodes éloignées.
+    /// Points de la courbe : un point par jour par période, calculé depuis `dailyBalances`.
+    /// Le premier jour de chaque période est marqué `isPeriodEnd` pour y placer un dot.
     private var chartPoints: [ChartPoint] {
         let shown = visiblePeriods
         guard !shown.isEmpty else { return [] }
 
-        var pts: [ChartPoint] = []
         let thresholdDouble = Double(NSDecimalNumber(decimal: tightThreshold).doubleValue)
+        var pts: [ChartPoint] = []
 
         for period in shown {
-            // Début de période : solde avant les transactions
-            let startBalance: Double
+            var daily = period.dailyBalances
+
+            // Appliquer l'override de solde d'ouverture sur la période focalisée
             if let override = overridePreviousBalance,
-               let focused = focusedPeriod,
-               period.id == focused.id {
-                startBalance = (override as NSDecimalNumber).doubleValue
-            } else {
-                startBalance = (period.previousBalance as NSDecimalNumber).doubleValue
+               let focused  = focusedPeriod,
+               period.id    == focused.id,
+               !daily.isEmpty {
+                let overrideDouble = (override as NSDecimalNumber).doubleValue
+                let originalFirst  = (daily[0].balance as NSDecimalNumber).doubleValue
+                let shift          = overrideDouble - originalFirst
+                daily = daily.map { (date: $0.date, balance: $0.balance + Decimal(shift)) }
             }
-            pts.append(ChartPoint(
-                id:            period.startDate,
-                date:          period.startDate,
-                balance:       startBalance,
-                isTight:       startBalance < thresholdDouble && startBalance >= 0,
-                isNegative:    startBalance < 0,
-                isEndOfPeriod: false
-            ))
-            // Fin de période : solde après les transactions
-            let endBalance = (period.projectedBalance as NSDecimalNumber).doubleValue
-            pts.append(ChartPoint(
-                id:            period.endDate,
-                date:          period.endDate,
-                balance:       endBalance,
-                isTight:       endBalance < thresholdDouble && endBalance >= 0,
-                isNegative:    endBalance < 0,
-                isEndOfPeriod: true
-            ))
+
+            for (idx, snapshot) in daily.enumerated() {
+                let bal = (snapshot.balance as NSDecimalNumber).doubleValue
+                pts.append(ChartPoint(
+                    id:            snapshot.date,
+                    date:          snapshot.date,
+                    balance:       bal,
+                    isTight:       bal < thresholdDouble && bal >= 0,
+                    isNegative:    bal < 0,
+                    isPeriodEnd: idx == daily.count - 1
+                ))
+            }
         }
 
         return pts
@@ -128,7 +129,7 @@ struct BalanceChartView: View {
         return Date.distantPast...Date.distantFuture
     }
 
-    private var endPoints: [ChartPoint] { chartPoints.filter(\.isEndOfPeriod) }
+    private var periodStartPoints: [ChartPoint] { chartPoints.filter(\.isPeriodEnd) }
 
     private var yRange: (min: Double, max: Double) {
         let vals = chartPoints.map(\.balance)
@@ -164,8 +165,46 @@ struct BalanceChartView: View {
             lineMarks()
             statusPointMarks()
             todayRule()
+            scrubbingRule()
         }
         .chartXAxis { xAxisContent }
+        .chartOverlay { proxy in
+            GeometryReader { _ in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                guard let date = proxy.value(atX: value.location.x, as: Date.self) else { return }
+                                scrubbedDate    = date
+                                scrubbedBalance = balance(at: date)
+                            }
+                            .onEnded { _ in
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    scrubbedDate    = nil
+                                    scrubbedBalance = nil
+                                }
+                            }
+                    )
+            }
+        }
+    }
+
+    // MARK: - Interpolation de solde
+
+    private func balance(at date: Date) -> Double? {
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: date)
+        // Correspondance exacte au jour — données journalières disponibles
+        if let pt = chartPoints.first(where: { cal.isDate($0.date, inSameDayAs: day) }) {
+            return pt.balance
+        }
+        // Hors plage : clamp sur les bornes
+        let sorted = chartPoints
+        guard !sorted.isEmpty else { return nil }
+        if day < sorted.first!.date { return sorted.first!.balance }
+        return sorted.last!.balance
     }
 
     // MARK: - Gradient vert / amber / rouge
@@ -272,7 +311,7 @@ struct BalanceChartView: View {
 
     @ChartContentBuilder
     private func statusPointMarks() -> some ChartContent {
-        ForEach(endPoints) { pt in
+        ForEach(periodStartPoints) { pt in
             let dotColor: Color = pt.isNegative ? softRedColor : pt.isTight ? amberColor : .green
             PointMark(
                 x: .value("Date",  pt.date),
@@ -286,35 +325,72 @@ struct BalanceChartView: View {
 
     /// Ligne verticale « Aujourd'hui » — présente dans tous les graphiques.
     /// Affiche un badge date + solde si `todayBalance` est fourni, sinon « Aujourd'hui » en mode plein.
+    /// Le badge est masqué quand le scrubbing est actif.
     @ChartContentBuilder
     private func todayRule() -> some ChartContent {
         RuleMark(x: .value("Aujourd'hui", Date.now))
             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
             .foregroundStyle(Color.secondary.opacity(0.6))
             .annotation(position: .top, alignment: .center, spacing: 4) {
-                if let balance = todayBalance {
-                    todayBadge(balance: balance)
-                } else if showFullYear {
-                    Text("Aujourd'hui")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.ultraThinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                if scrubbedDate == nil {
+                    if let balance = todayBalance {
+                        todayBadge(balance: balance)
+                    } else if showFullYear {
+                        Text("Aujourd'hui")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .shadow(color: .black.opacity(0.08), radius: 3, x: 0, y: 1)
+                    }
                 }
             }
     }
 
+    /// Ligne de scrubbing — suit le doigt et affiche la date + solde interpolé.
+    @ChartContentBuilder
+    private func scrubbingRule() -> some ChartContent {
+        if let date = scrubbedDate {
+            RuleMark(x: .value("Sélection", date))
+                .lineStyle(StrokeStyle(lineWidth: 1.5))
+                .foregroundStyle(Color.indigo.opacity(0.85))
+                .annotation(position: .top, alignment: .center, spacing: 4) {
+                    if let bal = scrubbedBalance {
+                        scrubbingBadge(date: date, balance: bal)
+                    }
+                }
+        }
+    }
+
     @ViewBuilder
     private func todayBadge(balance: Decimal) -> some View {
-        let day   = Calendar.current.component(.day,   from: .now)
-        let month = Calendar.current.component(.month, from: .now)
+        chartBadge(
+            day: Calendar.current.component(.day,   from: .now),
+            month: Calendar.current.component(.month, from: .now),
+            formattedBalance: CurrencyFormatter.shared.format(balance),
+            accentColor: Color.primary.opacity(0.10)
+        )
+    }
+
+    @ViewBuilder
+    private func scrubbingBadge(date: Date, balance: Double) -> some View {
+        chartBadge(
+            day: Calendar.current.component(.day,   from: date),
+            month: Calendar.current.component(.month, from: date),
+            formattedBalance: CurrencyFormatter.shared.format(Decimal(balance)),
+            accentColor: Color.indigo.opacity(0.25)
+        )
+    }
+
+    @ViewBuilder
+    private func chartBadge(day: Int, month: Int, formattedBalance: String, accentColor: Color) -> some View {
         VStack(spacing: 1) {
             Text("\(day)/\(month)")
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
-            Text(CurrencyFormatter.shared.format(balance))
+            Text(formattedBalance)
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -322,9 +398,13 @@ struct BalanceChartView: View {
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial)
+        .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(accentColor, lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 4, x: 0, y: 1)
     }
 
     // MARK: - Axes
@@ -388,11 +468,18 @@ struct BalanceChartView: View {
 
     func period(offset: Int, balance: Decimal, tight: Bool, current: Bool) -> PayPeriod {
         let start = cal.date(byAdding: .day, value: offset * 14, to: today)!
+        let end   = cal.date(byAdding: .day, value: 13, to: start)!
+        let prev  = balance - 400
+        let daily: [(date: Date, balance: Decimal)] = (0...13).map { d in
+            let date = cal.date(byAdding: .day, value: d, to: start)!
+            let bal  = prev + Decimal(d) * 400 / 13
+            return (date: date, balance: bal)
+        }
         return PayPeriod(
-            id: UUID(), startDate: start,
-            endDate: cal.date(byAdding: .day, value: 13, to: start)!,
-            projectedBalance: balance, previousBalance: balance - 400,
-            delta: 400, isTight: tight, isCurrentPeriod: current, transactions: []
+            id: UUID(), startDate: start, endDate: end,
+            projectedBalance: balance, previousBalance: prev,
+            delta: 400, isTight: tight, isCurrentPeriod: current,
+            transactions: [], dailyBalances: daily
         )
     }
 

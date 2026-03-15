@@ -60,27 +60,21 @@ struct HomeView: View {
         )
     }
 
-    /// Fenêtre du graphique Évolution: 1 période avant + période courante + 3 périodes après.
+    /// Fenêtre du graphique Évolution : 1 période avant + période courante + 3 périodes après = 5.
     private var evolutionPeriods: [PayPeriod] {
         guard let s = settings else { return [] }
-        let calendar = Calendar.current
-        let currentStart = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
-        let startReference: Date
-
-        if s.payPeriodFrequency == .biweekly {
-            startReference = calendar.date(byAdding: .day, value: -14, to: currentStart) ?? currentStart
-        } else {
-            startReference = calendar.date(byAdding: .month, value: -1, to: currentStart) ?? currentStart
-        }
-
+        // On recule d'un jour avant le début de la période courante pour que PeriodEngine
+        // ancre la génération sur la période précédente.
+        let currentStart  = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
+        let dayBefore     = Calendar.current.date(byAdding: .day, value: -1, to: currentStart) ?? currentStart
         return PeriodEngine.generate(
-            settings:     s,
-            accounts:     accounts,
-            recurring:    recurring,
-            count:        5,
-            referenceDate: startReference,
-            overrides:    allOverrides,
-            transactions: allPastTransactions
+            settings:          s,
+            accounts:          accounts,
+            recurring:         recurring,
+            count:             5,          // 1 avant + courante + 3 après
+            referenceDate:     dayBefore,
+            overrides:         allOverrides,
+            transactions:      allPastTransactions
         )
     }
 

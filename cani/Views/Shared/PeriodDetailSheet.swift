@@ -214,7 +214,8 @@ struct PeriodDetailSheet: View {
                 delta:            isolated,
                 isTight:          p.isTight,
                 isCurrentPeriod:  p.isCurrentPeriod,
-                transactions:     p.transactions
+                transactions:     p.transactions,
+                dailyBalances:    p.dailyBalances
             )
         }
     }
@@ -230,19 +231,16 @@ struct PeriodDetailSheet: View {
                         .padding(.top, 12)
                         .padding(.bottom, 8)
 
-                    if !period.transactions.isEmpty {
-                        PeriodProgressChart(
-                            period:              period,
-                            carryForwardBalance: carryForwardBalance,
-                            tightThreshold:      tightThreshold,
-                            overrides:           allOverrides,
-                            realTransactions:    period.isCurrentPeriod
-                                ? allTransactions.filter { $0.date >= period.startDate }
-                                : []
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                    }
+                    PeriodProgressChart(
+                        period:              period,
+                        carryForwardBalance: carryForwardBalance,
+                        tightThreshold:      tightThreshold,
+                        overrides:           allOverrides,
+                        realTransactions:    allTransactions,
+                        budgetAccountIds:    Set(allAccounts.filter(\.includeInBudget).map(\.id))
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
 
                     if period.isTight {
                         tightBanner
@@ -810,7 +808,8 @@ private struct RealTransactionEditSheet: View {
                     delta: -1_570,
                     isTight: true,
                     isCurrentPeriod: true,
-                    transactions: []
+                    transactions: [],
+                    dailyBalances: []
                 )
             )
         }

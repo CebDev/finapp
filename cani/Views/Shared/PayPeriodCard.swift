@@ -178,7 +178,8 @@ struct PayPeriodCard: View {
             delta:            2_430,
             isTight:          false,
             isCurrentPeriod:  true,
-            transactions:     []
+            transactions:     [],
+            dailyBalances:    []
         ),
         PayPeriod(
             id: UUID(),
@@ -189,7 +190,8 @@ struct PayPeriodCard: View {
             delta:            -320,
             isTight:          true,
             isCurrentPeriod:  false,
-            transactions:     []
+            transactions:     [],
+            dailyBalances:    []
         ),
         PayPeriod(
             id: UUID(),
@@ -200,7 +202,8 @@ struct PayPeriodCard: View {
             delta:            1_780,
             isTight:          false,
             isCurrentPeriod:  false,
-            transactions:     []
+            transactions:     [],
+            dailyBalances:    []
         ),
     ]
     let maxBal = periods.map(\.projectedBalance).max() ?? 1

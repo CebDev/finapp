@@ -100,19 +100,22 @@ struct ProjectionEngine {
             return txStart >= monthStart && txStart < nextMonthStart ? [txStart] : []
 
         case .weekly:
-            return stepDayOccurrences(
+            let dates = stepDayOccurrences(
                 anchor: txStart, stepDays: 7,
                 from: monthStart, to: nextMonthStart, calendar: calendar
             )
+            return applyEndDate(transaction.endDate, to: dates, calendar: calendar)
 
         case .biweekly:
-            let dates = stepDayOccurrences(
+            var dates = stepDayOccurrences(
                 anchor: txStart, stepDays: 14,
                 from: monthStart, to: nextMonthStart, calendar: calendar
             )
-            guard let targetWeekday = transaction.dayOfWeek else { return dates }
-            // Filtre de sécurité — Calendar.weekday : 1=dimanche … 7=samedi → 0-indexé : 0=dimanche
-            return dates.filter { calendar.component(.weekday, from: $0) - 1 == targetWeekday }
+            if let targetWeekday = transaction.dayOfWeek {
+                // Filtre de sécurité — Calendar.weekday : 1=dimanche … 7=samedi → 0-indexé : 0=dimanche
+                dates = dates.filter { calendar.component(.weekday, from: $0) - 1 == targetWeekday }
+            }
+            return applyEndDate(transaction.endDate, to: dates, calendar: calendar)
 
         case .semimonthly:
             return semimonthlyOccurrences(
@@ -127,20 +130,27 @@ struct ProjectionEngine {
             )
 
         case .quarterly:
-            return stepMonthOccurrences(
+            return applyEndDate(transaction.endDate, to: stepMonthOccurrences(
                 anchor: txStart, stepMonths: 3,
                 from: monthStart, to: nextMonthStart, calendar: calendar
-            )
+            ), calendar: calendar)
 
         case .annual:
-            return stepMonthOccurrences(
+            return applyEndDate(transaction.endDate, to: stepMonthOccurrences(
                 anchor: txStart, stepMonths: 12,
                 from: monthStart, to: nextMonthStart, calendar: calendar
-            )
+            ), calendar: calendar)
         }
     }
 
     // MARK: - Helpers privés
+
+    /// Filtre les dates dont le jour dépasse `endDate` (inclusif).
+    private static func applyEndDate(_ endDate: Date?, to dates: [Date], calendar: Calendar) -> [Date] {
+        guard let end = endDate else { return dates }
+        let endDay = startOfDay(end, calendar: calendar)
+        return dates.filter { $0 <= endDay }
+    }
 
     private static func firstDayOfMonth(for date: Date, calendar: Calendar) -> Date? {
         calendar.date(from: calendar.dateComponents([.year, .month], from: date))
@@ -241,8 +251,10 @@ struct ProjectionEngine {
         return dates
     }
 
-    /// Génère l'occurrence mensuelle dans `[from, to)` en respectant `dayOfMonth`.
-    /// Si le jour n'existe pas dans le mois (ex: 31 en février), aucune occurrence n'est retournée.
+    /// Génère les occurrences mensuelles dans `[from, to)` en respectant `dayOfMonth`.
+    /// Itère sur tous les mois calendaires chevauchant la fenêtre — nécessaire pour les périodes
+    /// bi-hebdomadaires dont la fenêtre peut traverser deux mois calendaires
+    /// (ex : 30 avril → 13 mai : le 12 mai doit être capturé).
     private static func monthlyOccurrences(
         transaction: RecurringTransaction,
         txStart: Date,
@@ -251,19 +263,34 @@ struct ProjectionEngine {
         calendar: Calendar
     ) -> [Date] {
         let targetDay = transaction.dayOfMonth ?? calendar.component(.day, from: txStart)
-        let comps = calendar.dateComponents([.year, .month], from: monthStart)
+        var dates: [Date] = []
 
-        var dc = DateComponents()
-        dc.year = comps.year
-        dc.month = comps.month
-        dc.day = targetDay
+        guard var calMonth = calendar.date(
+            from: calendar.dateComponents([.year, .month], from: monthStart)
+        ) else { return [] }
 
-        guard let date = calendar.date(from: dc) else { return [] }
-        // Vérifie que la date n'a pas débordé dans un autre mois (ex: 31 → mois suivant)
-        guard date >= monthStart, date < nextMonthStart else { return [] }
-        guard date >= txStart else { return [] }
-        if let end = transaction.endDate, startOfDay(end, calendar: calendar) < date { return [] }
+        while calMonth < nextMonthStart {
+            var dc = calendar.dateComponents([.year, .month], from: calMonth)
+            dc.day = targetDay
 
-        return [date]
+            if let candidate = calendar.date(from: dc) {
+                // Vérifie que le jour n'a pas débordé dans un autre mois (ex: 31 en février)
+                let sameMonth = calendar.component(.month, from: candidate) == dc.month ?? -1
+                if sameMonth,
+                   candidate >= monthStart,
+                   candidate < nextMonthStart,
+                   candidate >= txStart {
+                    let endOk = transaction.endDate
+                        .map { startOfDay($0, calendar: calendar) >= candidate } ?? true
+                    if endOk { dates.append(candidate) }
+                }
+            }
+
+            guard let next = calendar.date(byAdding: .month, value: 1, to: calMonth),
+                  next > calMonth else { break }
+            calMonth = next
+        }
+
+        return dates
     }
 }

@@ -34,12 +34,13 @@ struct ProjectionView: View {
     private var allPeriods: [PayPeriod] {
         guard let s = settings else { return [] }
         return PeriodEngine.generate(
-            settings:     s,
-            accounts:     accounts,
-            recurring:    recurring,
-            count:        13,
-            overrides:    allOverrides,
-            transactions: allTransactions
+            settings:          s,
+            accounts:          accounts,
+            recurring:         recurring,
+            count:             13,
+            overrides:         allOverrides,
+            transactions:      allTransactions,
+            dailySamplingStep: 2
         )
     }
 
