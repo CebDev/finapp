@@ -65,7 +65,8 @@ class Account {
         creditLimit: Decimal? = nil,
         icon: String = "creditcard",
         isArchived: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        sortOrder: Int = 0
     ) {
         self.id = id
         self.name = name
@@ -77,5 +78,6 @@ class Account {
         self.icon = icon
         self.isArchived = isArchived
         self.createdAt = createdAt
+        self.sortOrder = sortOrder
     }
 }

@@ -21,7 +21,7 @@ class Transaction {
     var isTransfer: Bool = false
     /// UUID du compte de destination pour un transfert (nil si non-transfert)
     var transferDestinationAccountId: UUID? = nil
-    var isPayd: Bool = false
+    var isPaid: Bool = false
  
     init(
         id: UUID = UUID(),
@@ -35,7 +35,7 @@ class Transaction {
         notes: String? = nil,
         isTransfer: Bool = false,
         transferDestinationAccountId: UUID? = nil,
-        isPayd: Bool = false
+        isPaid: Bool = false
     ) {
         self.id = id
         self.accountId = accountId
@@ -47,7 +47,7 @@ class Transaction {
         self.categoryId = categoryId
         self.notes = notes
         self.isTransfer = isTransfer
-        self.transferDestinationAccountId = transferDestinationAccountId,
-        self.isPayd = isPayd
+        self.transferDestinationAccountId = transferDestinationAccountId
+        self.isPaid = isPaid
     }
 }
