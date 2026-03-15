@@ -1,10 +1,3 @@
-//
-//  RecurringTransaction.swift
-//  cani
-//
-//  Created by Sébastien Vermandele on 2026-03-12.
-//
-
 import Foundation
 import SwiftData
 
@@ -23,13 +16,15 @@ class RecurringTransaction {
     /// UUID de la Category SwiftData sélectionnée (nil = non catégorisé)
     var categoryId: UUID? = nil
     var isSubscription: Bool = false
+    /// true = récurrence active ; false = mise en pause sans suppression
+    var isActive: Bool = true
     var logo: String = ""
     var notes: String? = nil
     /// Vrai si la récurrence est un transfert entre comptes
     var isTransfer: Bool = false
     /// UUID du compte de destination pour un transfert (nil si non-transfert)
     var transferDestinationAccountId: UUID? = nil
-
+ 
     init(
         id: UUID = UUID(),
         accountId: UUID,
@@ -43,6 +38,7 @@ class RecurringTransaction {
         isIncome: Bool = false,
         categoryId: UUID? = nil,
         isSubscription: Bool = false,
+        isActive: Bool = true,
         logo: String = "",
         notes: String? = nil,
         isTransfer: Bool = false,
@@ -60,6 +56,7 @@ class RecurringTransaction {
         self.isIncome = isIncome
         self.categoryId = categoryId
         self.isSubscription = isSubscription
+        self.isActive = isActive
         self.logo = logo
         self.notes = notes
         self.isTransfer = isTransfer

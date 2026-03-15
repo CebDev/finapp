@@ -1,10 +1,3 @@
-//
-//  Account.swift
-//  cani
-//
-//  Created by Sébastien Vermandele on 2026-03-12.
-//
-
 import Foundation
 import SwiftData
 
@@ -15,7 +8,6 @@ class Account {
     var type: AccountType = AccountType.chequing
     var currentBalance: Decimal = Decimal(0)
     var includeInBudget: Bool = true
-    var isShortTermReserve: Bool = false
     var creditLimit: Decimal? = nil
     /// Raw backing pour SwiftData — évite le cast crash sur enums Codable non-optionnels.
     var creditBalanceDisplayModeRaw: String? = CreditBalanceDisplayMode.creditAvailable.rawValue
@@ -24,9 +16,11 @@ class Account {
         set { creditBalanceDisplayModeRaw = newValue.rawValue }
     }
     var icon: String = "creditcard"
+    /// true = compte archivé (fermé) — conservé pour l'historique, exclu des listes actives.
+    var isArchived: Bool = false
     var createdAt: Date = Date()
     var sortOrder: Int = 0
-
+ 
     /// Contribution au solde de départ de la projection budgétaire.
     /// Diffère de effectiveBalance pour les cartes de crédit en mode creditOwed :
     /// la dette est déjà négative dans currentBalance → pas besoin de l'inverser.
@@ -43,7 +37,7 @@ class Account {
             return currentBalance
         }
     }
-
+ 
     /// Solde effectif selon le type de compte et le mode d'affichage choisi.
     /// C'est cette valeur qui doit être utilisée partout pour l'affichage et la projection.
     var effectiveBalance: Decimal {
@@ -60,17 +54,17 @@ class Account {
             return currentBalance
         }
     }
-
+ 
     init(
         id: UUID = UUID(),
         name: String,
         type: AccountType,
         currentBalance: Decimal = 0,
         includeInBudget: Bool = true,
-        isShortTermReserve: Bool = false,
         creditBalanceDisplayMode: CreditBalanceDisplayMode = .creditAvailable,
         creditLimit: Decimal? = nil,
         icon: String = "creditcard",
+        isArchived: Bool = false,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -78,10 +72,10 @@ class Account {
         self.type = type
         self.currentBalance = currentBalance
         self.includeInBudget = includeInBudget
-        self.isShortTermReserve = isShortTermReserve
         self.creditBalanceDisplayModeRaw = creditBalanceDisplayMode.rawValue
         self.creditLimit = creditLimit
         self.icon = icon
+        self.isArchived = isArchived
         self.createdAt = createdAt
     }
 }

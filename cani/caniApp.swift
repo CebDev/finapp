@@ -1,10 +1,3 @@
-//
-//  caniApp.swift
-//  cani
-//
-//  Created by Sébastien Vermandele on 2026-03-12.
-//
-
 import SwiftUI
 import SwiftData
 
@@ -23,14 +16,12 @@ struct caniApp: App {
             Category.self,
             UserSettings.self,
             TransactionOverride.self
+            // Subscription.self supprimé — les abonnements sont des RecurringTransaction
+            // avec isSubscription == true. Décision acté dans decisions.md.
         ])
-        // CloudKit désactivé en dev — activer après configuration des entitlements iCloud dans Xcode
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .private("iCloud.cebdev.cani"))
-        //let config = ModelConfiguration(schema: schema)
         container = try! ModelContainer(for: schema, configurations: config)
         CategoryService.seedIfNeeded(context: container.mainContext)
-        // UserSettings est créé lors de la première configuration explicite par l'utilisateur
-        // (PeriodSetupSheet), pas automatiquement au démarrage.
     }
 
     var body: some Scene {

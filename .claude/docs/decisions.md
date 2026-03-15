@@ -164,6 +164,77 @@ var amount: Double
 
 ---
 
+## 2026-03-15
+
+### Modèle de données : suppression de `Subscription`, consolidation dans `RecurringTransaction`
+
+**Contexte** : Revue complète du modèle de données. `Subscription` existait comme modèle séparé
+mais n'était utilisé par aucune vue — `SubscriptionsView` utilisait déjà `RecurringTransaction`.
+
+**Décision** : Supprimer `Subscription.swift` entièrement. Les abonnements sont des
+`RecurringTransaction` avec `isSubscription == true`.
+
+**Raison** :
+- Duplication sans valeur : deux modèles pour le même concept
+- `SubscriptionsView` utilisait déjà `RecurringTransaction` comme source de vérité
+- Simplifie le schema SwiftData (une entité de moins)
+- Cohérent avec la décision d'origine du product brief
+
+**Alternatives rejetées** :
+- Garder `Subscription` séparé — duplication injustifiée, logique de sync entre les deux modèles complexe
+
+---
+
+### Modèle de données : stratégie de génération des transactions futures
+
+**Contexte** : Choix de l'approche pour les occurrences futures des récurrences.
+
+**Décision** : **Approche eager — calcul à la volée via `ProjectionEngine`**, pas de matérialisation
+des occurrences futures dans SwiftData. Seules les transactions réelles (payées) et les
+`TransactionOverride` sont persistées.
+
+**Raison** :
+- Moins de rows SwiftData
+- Pas de problème de maintenance sur modification du recurring
+- `ProjectionEngine.occurrences()` est la source de vérité unique
+
+**Règle de modification d'un recurring (3 options)** :
+- *Cette occurrence seulement* → `isCustomized = true` sur la `Transaction`, `recurringId` conservé
+- *Cette occurrence et les suivantes* → met à jour le `RecurringTransaction` + toutes les
+  `Transaction` futures liées, **y compris `isCustomized == true`** (Option A — absolu)
+- ~~Toutes les occurrences~~ → **retiré** — on ne modifie jamais le passé
+
+---
+
+### Modèle de données : `MonthEndStrategy` — clamp silencieux
+
+**Contexte** : Que faire quand un `RecurringTransaction` mensuel tombe un 31 en février ?
+
+**Décision** : `clamp` silencieux — le moteur ramène au jour disponible le plus proche,
+sans exposer ce choix à l'utilisateur.
+
+**Raison** : Simplicité UX. L'utilisateur n'a pas à comprendre ce cas edge.
+
+---
+
+### Modèle de données : champs ajoutés
+
+**Contexte** : Revue du modèle suite à la session de conception.
+
+**Décisions** :
+
+| Modèle | Champ ajouté | Valeur défaut | Raison |
+|---|---|---|---|
+| `RecurringTransaction` | `isActive: Bool` | `true` | Pause sans suppression |
+| `Transaction` | `isCustomized: Bool` | `false` | Distingue occurrence modifiée individuellement |
+| `Transaction` | `name: String` | `""` | Nom direct sans résolution via récurrence |
+| `Account` | `isArchived: Bool` | `false` | Compte fermé conservé pour historique |
+
+**Champ écarté** :
+- `Transaction.isManual` — redondant avec `recurringId == nil`
+
+---
+
 ## Template — Nouvelle décision
 
 ```markdown
