@@ -111,6 +111,8 @@ struct PeriodEngine {
                         calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedOcc)
                     }
 
+                    // Occurrence supprimée manuellement → ignorer dans tous les cas.
+                    if occOverride?.isSkipped == true { continue }
                     // Période courante : les occurrences déjà payées sont dans currentBalance — ne pas les re-compter.
                     if isCurrentPeriodIteration && occOverride?.isPaid == true { continue }
 

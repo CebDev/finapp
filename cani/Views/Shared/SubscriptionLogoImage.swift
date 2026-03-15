@@ -15,6 +15,8 @@ let allSubscriptionLogos: [String] = [
     "amazon-prime",
     "crave",
     "claude-ai",
+    "youtube",
+    "chatgpt"
 ]
 
 /// Affiche le logo d'un abonnement depuis Assets.xcassets.

@@ -45,15 +45,25 @@ enum UpcomingOperationsService {
             let occs = ProjectionEngine.occurrences(
                 of: tx, from: windowStart, to: windowEnd, calendar: calendar
             )
-            guard let first = occs.first else { continue }
 
-            let normalizedFirst = calendar.startOfDay(for: first)
-            let override = overrides.first {
-                $0.recurringTransactionId == tx.id &&
-                calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedFirst)
+            // Trouver la première occurrence non-supprimée
+            var chosenOcc:      Date?                = nil
+            var chosenOverride: TransactionOverride? = nil
+            for occ in occs {
+                let normalized = calendar.startOfDay(for: occ)
+                let ov = overrides.first {
+                    $0.recurringTransactionId == tx.id &&
+                    calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalized)
+                }
+                if ov?.isSkipped == true { continue }
+                chosenOcc      = occ
+                chosenOverride = ov
+                break
             }
-            let effectiveAmount = override?.actualAmount ?? tx.amount
-            let isPaid          = override?.isPaid == true
+            guard let first = chosenOcc else { continue }
+
+            let effectiveAmount = chosenOverride?.actualAmount ?? tx.amount
+            let isPaid          = chosenOverride?.isPaid == true
 
             let cat = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
             ops.append(UpcomingOperation(

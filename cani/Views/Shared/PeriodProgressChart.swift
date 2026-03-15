@@ -72,7 +72,7 @@ struct PeriodProgressChart: View {
                     $0.recurringTransactionId == tx.id &&
                     calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: day)
                 }
-                if let ov, ov.isPaid { continue }
+                if let ov, ov.isSkipped || ov.isPaid { continue }
                 projectedByDay[day, default: 0] += ov?.actualAmount ?? tx.amount
             }
         }
@@ -120,6 +120,7 @@ struct PeriodProgressChart: View {
                     $0.recurringTransactionId == tx.id &&
                     calendar.isDate(calendar.startOfDay(for: $0.occurrenceDate), inSameDayAs: day)
                 }
+                if let ov, ov.isSkipped { continue }
                 occurrences.append((date: day, amount: ov?.actualAmount ?? tx.amount))
             }
         }

@@ -20,7 +20,9 @@ struct PeriodDetailSheet: View {
     @Query                                     private var allTransactions: [Transaction]
     @Query                                     private var allOverrides:    [TransactionOverride]
     @Query(sort: \RecurringTransaction.name)   private var allRecurring:    [RecurringTransaction]
-    @Environment(\.dismiss) private var dismiss
+    @Query                                     private var allAccounts:     [Account]
+    @Environment(\.dismiss)      private var dismiss
+    @Environment(\.modelContext) private var context
 
     @State private var showingEditChoice:        Bool                    = false
     @State private var editChoiceTarget:         RecurringTransaction?   = nil
@@ -30,6 +32,10 @@ struct PeriodDetailSheet: View {
     @State private var editingOccurrence:        RecurringTransaction?   = nil
     @State private var markingAsPaid:            RecurringTransaction?   = nil
     @State private var markingAsPaidDate:        Date                    = Date()
+    // Transactions réelles (confirmées)
+    @State private var tappedRealTx:             Transaction?            = nil
+    @State private var showingRealTxMenu:        Bool                    = false
+    @State private var editingRealTx:            Transaction?            = nil
 
     // MARK: - Computed
 
@@ -60,7 +66,7 @@ struct PeriodDetailSheet: View {
 
         var entries: [SortedEntry] = []
 
-        // 1. Transactions réelles confirmées dans la période courante
+        // 1. Transactions réelles confirmées dans la période courante uniquement.
         if period.isCurrentPeriod {
             for tx in allTransactions
             where tx.date >= period.startDate && tx.date < exclusiveEnd {
@@ -74,6 +80,9 @@ struct PeriodDetailSheet: View {
                 of: tx, from: period.startDate, to: exclusiveEnd, calendar: cal
             )
             for occDate in occs {
+                // Occurrence supprimée manuellement → toujours ignorer
+                if skippedOverride(for: tx, at: occDate) != nil { continue }
+
                 let state: PlannedTransactionState?
                 if period.isCurrentPeriod {
                     if paidOverride(for: tx, at: occDate) != nil { continue }
@@ -157,6 +166,16 @@ struct PeriodDetailSheet: View {
         return allOverrides.first {
             $0.recurringTransactionId == tx.id &&
             $0.isPaid &&
+            cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: cal.startOfDay(for: occDate))
+        }
+    }
+
+    /// Retourne le TransactionOverride marqué supprimé pour une occurrence précise, s'il existe.
+    private func skippedOverride(for tx: RecurringTransaction, at occDate: Date) -> TransactionOverride? {
+        let cal = Calendar.current
+        return allOverrides.first {
+            $0.recurringTransactionId == tx.id &&
+            $0.isSkipped &&
             cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: cal.startOfDay(for: occDate))
         }
     }
@@ -295,6 +314,26 @@ struct PeriodDetailSheet: View {
             .sheet(item: $markingAsPaid) { tx in
                 MarkAsPaidSheet(transaction: tx, occurrenceDate: markingAsPaidDate)
             }
+            .confirmationDialog(
+                tappedRealTx.map { name(forReal: $0) } ?? "",
+                isPresented: $showingRealTxMenu,
+                titleVisibility: .visible
+            ) {
+                Button("Modifier") {
+                    editingRealTx = tappedRealTx
+                    tappedRealTx  = nil
+                }
+                Button("Supprimer", role: .destructive) {
+                    if let tx = tappedRealTx { deleteRealTx(tx) }
+                    tappedRealTx = nil
+                }
+                Button("Annuler", role: .cancel) { tappedRealTx = nil }
+            }
+            .sheet(item: $editingRealTx) { tx in
+                RealTransactionEditSheet(transaction: tx, allAccounts: allAccounts) { newAmount, newDate, newNotes, newAccountId in
+                    updateRealTx(tx, newSignedAmount: newAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId)
+                }
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -368,7 +407,23 @@ struct PeriodDetailSheet: View {
         case .real(let tx):
             realRow(tx)
         case .planned(let tx, let state):
-            plannedRow(tx, occurrenceDate: entry.date, plannedState: state)
+            plannedRow(
+                logo:          tx.logo,
+                category:      effectiveCategory(for: tx, at: entry.date),
+                name:          tx.name,
+                occurrenceDate: entry.date,
+                subtitleLabel: tx.frequency.labelFR,
+                isModified:    occurrenceOverride(for: tx, at: entry.date) != nil,
+                amount:        effectiveAmount(for: tx, at: entry.date),
+                isIncome:      tx.isIncome,
+                plannedState:  state,
+                onTap: {
+                    editChoiceTarget         = tx
+                    editChoiceOccurrenceDate = entry.date
+                    editChoicePlannedState   = state
+                    showingEditChoice        = true
+                }
+            )
         }
     }
 
@@ -417,33 +472,41 @@ struct PeriodDetailSheet: View {
         .padding(.vertical, 11)
         .background(Color(.systemBackground))
         .overlay(Divider().padding(.leading, 68), alignment: .bottom)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            tappedRealTx      = tx
+            showingRealTxMenu = true
+        }
     }
 
-    // MARK: - Occurrence planifiée
+    // MARK: - Occurrence planifiée (récurrente ou ponctuelle)
 
     private func plannedRow(
-        _ tx: RecurringTransaction,
+        logo:          String,
+        category:      Category?,
+        name:          String,
         occurrenceDate occ: Date,
-        plannedState: PlannedTransactionState?
+        subtitleLabel: String,
+        isModified:    Bool,
+        amount:        Decimal,
+        isIncome:      Bool,
+        plannedState:  PlannedTransactionState?,
+        onTap:         @escaping () -> Void
     ) -> some View {
-        let cat        = effectiveCategory(for: tx, at: occ)
-        let amount     = effectiveAmount(for: tx, at: occ)
-        let isOverride = occurrenceOverride(for: tx, at: occ) != nil
         let isOverdue  = plannedState == .overdue
         let isUpcoming = plannedState == .upcoming
-        let isIncome   = tx.isIncome
 
         return HStack(spacing: 12) {
-            if !tx.logo.isEmpty {
-                SubscriptionLogoImage(logo: tx.logo, size: 36)
-            } else if let cat {
-                CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
+            if !logo.isEmpty {
+                SubscriptionLogoImage(logo: logo, size: 36)
+            } else if let category {
+                CategoryIconBadge(icon: category.icon, color: category.color, size: 36)
             } else {
                 CategoryIconBadge(icon: "square.dashed", color: "#98989D", size: 36)
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(tx.name)
+                Text(name)
                     .font(.body)
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
@@ -454,12 +517,10 @@ struct PeriodDetailSheet: View {
                     Text("·")
                         .font(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.4))
-                    Text(tx.frequency.labelFR)
+                    Text(subtitleLabel)
                         .font(.caption)
                         .foregroundStyle(Color.secondary.opacity(0.7))
-
                     if isOverdue {
-                        // Exception assumée à la règle orange/amber — action requise de l'utilisateur
                         Text("EN RETARD")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
@@ -467,7 +528,7 @@ struct PeriodDetailSheet: View {
                             .padding(.vertical, 2)
                             .background(Color.red)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
-                    } else if isOverride && !isUpcoming {
+                    } else if isModified && !isUpcoming {
                         Text("· modifiée")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.indigo)
@@ -494,12 +555,50 @@ struct PeriodDetailSheet: View {
         .overlay(Divider().padding(.leading, 68), alignment: .bottom)
         .opacity(isUpcoming ? 0.55 : 1.0)
         .contentShape(Rectangle())
-        .onTapGesture {
-            editChoiceTarget         = tx
-            editChoiceOccurrenceDate = occ
-            editChoicePlannedState   = plannedState
-            showingEditChoice        = true
+        .onTapGesture(perform: onTap)
+    }
+
+    // MARK: - Suppression / édition transactions réelles
+
+    private func deleteRealTx(_ tx: Transaction) {
+        // Annuler l'effet sur le solde si la transaction est passée
+        if tx.isPast, let account = allAccounts.first(where: { $0.id == tx.accountId }) {
+            account.currentBalance -= tx.amount
         }
+        // Si liée à une récurrence, supprimer le marqueur isPaid pour que l'occurrence redevienne planifiée
+        if let recurId = tx.recurringTransactionId {
+            let cal = Calendar.current
+            if let ov = allOverrides.first(where: {
+                $0.recurringTransactionId == recurId &&
+                $0.isPaid &&
+                cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: cal.startOfDay(for: tx.date))
+            }) {
+                context.delete(ov)
+            }
+        }
+        context.delete(tx)
+    }
+
+    private func updateRealTx(_ tx: Transaction, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
+        let delta          = newSignedAmount - tx.amount
+        let accountChanged = newAccountId != tx.accountId
+
+        if tx.isPast {
+            if accountChanged {
+                if let oldAccount = allAccounts.first(where: { $0.id == tx.accountId }) {
+                    oldAccount.currentBalance -= tx.amount
+                }
+                if let newAccount = allAccounts.first(where: { $0.id == newAccountId }) {
+                    newAccount.currentBalance += newSignedAmount
+                }
+            } else if let account = allAccounts.first(where: { $0.id == tx.accountId }) {
+                account.currentBalance += delta
+            }
+        }
+        tx.amount    = newSignedAmount
+        tx.date      = newDate
+        tx.notes     = newNotes
+        tx.accountId = newAccountId
     }
 
     // MARK: - Empty state
@@ -581,6 +680,110 @@ struct PeriodDetailSheet: View {
     /// Amber — jamais rouge pour les alertes budget.
     private var amberColor: Color {
         Color(red: 1.0, green: 0.7, blue: 0.0)
+    }
+}
+
+// MARK: - RealTransactionEditSheet
+
+private struct RealTransactionEditSheet: View {
+    let transaction: Transaction
+    let allAccounts: [Account]
+    let onSave:      (Decimal, Date, String?, UUID) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var amountFocused: Bool
+
+    @State private var amountText:        String
+    @State private var date:              Date
+    @State private var notes:             String
+    @State private var selectedAccountId: UUID
+
+    private var isIncome: Bool { transaction.amount > 0 }
+
+    init(transaction: Transaction, allAccounts: [Account], onSave: @escaping (Decimal, Date, String?, UUID) -> Void) {
+        self.transaction = transaction
+        self.allAccounts = allAccounts
+        self.onSave      = onSave
+        _amountText        = State(initialValue: "\(Swift.abs(transaction.amount))")
+        _date              = State(initialValue: transaction.date)
+        _notes             = State(initialValue: transaction.notes ?? "")
+        _selectedAccountId = State(initialValue: transaction.accountId)
+    }
+
+    private var parsedAmount: Decimal? {
+        let normalized = amountText
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "")
+        guard !normalized.isEmpty else { return nil }
+        return Decimal(string: normalized)
+    }
+
+    private var isValid: Bool { parsedAmount != nil && parsedAmount! > 0 }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Montant") {
+                    HStack(spacing: 6) {
+                        Text(isIncome ? "+" : "−")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(isIncome ? .green : .orange)
+                            .frame(width: 16)
+                        TextField("0,00", text: $amountText)
+                            .keyboardType(.decimalPad)
+                            .focused($amountFocused)
+                        Spacer()
+                        Text("$").foregroundStyle(.secondary)
+                    }
+                }
+
+                if allAccounts.count > 1 {
+                    Section("Compte") {
+                        Picker("Compte", selection: $selectedAccountId) {
+                            ForEach(allAccounts) { acc in
+                                Label(acc.name, systemImage: acc.icon).tag(acc.id)
+                            }
+                        }
+                    }
+                }
+
+                Section("Date") {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                        .environment(\.locale, Locale(identifier: "fr_CA"))
+                        .labelsHidden()
+                }
+
+                Section("Notes") {
+                    TextField("Facultatif", text: $notes, axis: .vertical)
+                        .lineLimit(3)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle("Modifier")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").fontWeight(.semibold)
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        guard let raw = parsedAmount else { return }
+                        let signed = isIncome ? raw : -raw
+                        onSave(signed, date, notes.isEmpty ? nil : notes, selectedAccountId)
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark").fontWeight(.semibold)
+                    }
+                    .disabled(!isValid)
+                }
+            }
+            .onAppear { amountFocused = true }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

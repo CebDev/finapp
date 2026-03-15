@@ -95,6 +95,10 @@ struct ProjectionEngine {
         if let end = transaction.endDate, startOfDay(end, calendar: calendar) < monthStart { return [] }
 
         switch transaction.frequency {
+        case .oneTime:
+            // Une seule occurrence à la date de départ
+            return txStart >= monthStart && txStart < nextMonthStart ? [txStart] : []
+
         case .weekly:
             return stepDayOccurrences(
                 anchor: txStart, stepDays: 7,

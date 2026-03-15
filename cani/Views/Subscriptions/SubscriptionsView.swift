@@ -11,6 +11,7 @@ import SwiftData
 private extension Frequency {
     var subShortLabel: String {
         switch self {
+        case .oneTime:     return ""
         case .weekly:      return "/sem"
         case .biweekly:    return "/2 sem"
         case .semimonthly: return "/2×mois"
@@ -22,6 +23,7 @@ private extension Frequency {
 
     var subLocalizedLabel: String {
         switch self {
+        case .oneTime:     return "Ponctuel"
         case .weekly:      return "Hebdomadaire"
         case .biweekly:    return "Aux 2 semaines"
         case .semimonthly: return "Semi-mensuel"
@@ -34,6 +36,7 @@ private extension Frequency {
     func normalizedMonthlyCost(amount: Decimal) -> Decimal {
         let a = Swift.abs(amount)
         switch self {
+        case .oneTime:     return 0
         case .weekly:      return a * 52 / 12
         case .biweekly:    return a * 26 / 12
         case .semimonthly: return a * 2

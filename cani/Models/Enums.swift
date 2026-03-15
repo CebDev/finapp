@@ -24,6 +24,7 @@ enum CreditBalanceDisplayMode: String, Codable, CaseIterable {
 }
 
 enum Frequency: String, Codable, CaseIterable {
+    case oneTime        // transaction ponctuelle future (1 seule occurrence)
     case weekly
     case biweekly
     case semimonthly

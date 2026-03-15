@@ -18,6 +18,8 @@ final class TransactionOverride {
     var occurrenceDate:         Date     = Date()
     /// true = occurrence confirmée comme payée.
     var isPaid:                 Bool     = false
+    /// true = occurrence supprimée manuellement (les occurrences futures restent intactes).
+    var isSkipped:              Bool     = false
     /// Montant réel — signé (négatif = dépense, positif = revenu). nil = montant original.
     var actualAmount:           Decimal? = nil
     /// Compte de débit/crédit réel. nil = compte original de la RecurringTransaction.

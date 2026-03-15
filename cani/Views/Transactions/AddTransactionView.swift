@@ -58,6 +58,8 @@ struct AddTransactionView: View {
 
     @Query(sort: \Account.name)       private var accounts:       [Account]
     @Query(sort: \Category.sortOrder) private var allCategories: [Category]
+    @Query                            private var allOverrides:   [TransactionOverride]
+    @Query                            private var allTransactions: [Transaction]
 
     // MARK: État du formulaire
     @State private var transactionType:              TransactionType = .expense
@@ -80,6 +82,8 @@ struct AddTransactionView: View {
 
     private var isEditing: Bool { editingRecurring != nil }
     private var isEditingOccurrence: Bool { editingOccurrenceRecurring != nil }
+
+    @State private var showingDeleteConfirm = false
 
     private var selectedCategory: Category? {
         guard let id = selectedCategoryId else { return nil }
@@ -119,6 +123,29 @@ struct AddTransactionView: View {
                     }
                     .disabled(!isFormValid)
                 }
+                if isEditing || isEditingOccurrence {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(role: .destructive) {
+                            showingDeleteConfirm = true
+                        } label: {
+                            Label("Supprimer", systemImage: "trash")
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+            .confirmationDialog(
+                deleteConfirmTitle,
+                isPresented: $showingDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Supprimer", role: .destructive) {
+                    if isEditing { deleteAll() }
+                    else if isEditingOccurrence { deleteOccurrence() }
+                }
+                Button("Annuler", role: .cancel) { }
+            } message: {
+                Text(deleteConfirmMessage)
             }
             .onAppear { prefillIfEditing() }
         }
@@ -383,6 +410,63 @@ struct AddTransactionView: View {
         ("Dimanche", 0),
     ]
 
+    // MARK: - Suppression
+
+    private var deleteConfirmTitle: String {
+        isEditing ? "Supprimer la récurrence" : "Supprimer cette occurrence"
+    }
+
+    private var deleteConfirmMessage: String {
+        isEditing
+            ? "Toutes les occurrences planifiées de \"\(editingRecurring?.name ?? "")\" seront supprimées."
+            : "Uniquement cette occurrence sera supprimée. Les occurrences futures resteront planifiées."
+    }
+
+    /// Supprime la RecurringTransaction et tous ses overrides associés.
+    private func deleteAll() {
+        guard let recurring = editingRecurring else { return }
+
+        // Supprimer les overrides liés
+        let linked = allOverrides.filter { $0.recurringTransactionId == recurring.id }
+        linked.forEach { context.delete($0) }
+
+        // Supprimer les transactions réelles liées
+        let linkedTx = allTransactions.filter { $0.recurringTransactionId == recurring.id }
+        linkedTx.forEach { context.delete($0) }
+
+        context.delete(recurring)
+        try? context.save()
+        dismiss()
+    }
+
+    /// Crée un override `isSkipped = true` pour masquer uniquement cette occurrence.
+    private func deleteOccurrence() {
+        guard let recurring = editingOccurrenceRecurring,
+              let occDate   = editingOccurrenceDate else { return }
+
+        let cal            = Calendar.current
+        let normalizedDate = cal.startOfDay(for: occDate)
+
+        // Réutiliser l'override existant s'il y en a un, sinon en créer un
+        let existing = allOverrides.first {
+            $0.recurringTransactionId == recurring.id &&
+            cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedDate)
+        }
+        if let ov = existing {
+            ov.isSkipped = true
+        } else {
+            let ov = TransactionOverride(
+                recurringTransactionId: recurring.id,
+                occurrenceDate:         normalizedDate
+            )
+            ov.isSkipped = true
+            context.insert(ov)
+        }
+
+        try? context.save()
+        dismiss()
+    }
+
     // MARK: - Sauvegarde
 
     private func save() {
@@ -463,16 +547,32 @@ struct AddTransactionView: View {
 
         } else {
             let isPast = date <= Date()
-            let tx = Transaction(
-                accountId:   accountId,
-                amount:      signedAmount,
-                date:        date,
-                isPast:      isPast,
-                isConfirmed: isPast,
-                categoryId:  selectedCategoryId
-            )
-            context.insert(tx)
-            if isPast { applyBalance(accountId: accountId, signedAmount: signedAmount) }
+            if isPast {
+                let tx = Transaction(
+                    accountId:   accountId,
+                    amount:      signedAmount,
+                    date:        date,
+                    isPast:      true,
+                    isConfirmed: true,
+                    categoryId:  selectedCategoryId
+                )
+                context.insert(tx)
+                applyBalance(accountId: accountId, signedAmount: signedAmount)
+            } else {
+                // Transaction ponctuelle future → RecurringTransaction .oneTime
+                let recurring = RecurringTransaction(
+                    accountId:      accountId,
+                    name:           name.trimmingCharacters(in: .whitespaces),
+                    amount:         signedAmount,
+                    frequency:      .oneTime,
+                    startDate:      date,
+                    endDate:        nil,
+                    isIncome:       isIncome,
+                    categoryId:     selectedCategoryId,
+                    isSubscription: false
+                )
+                context.insert(recurring)
+            }
         }
     }
 
@@ -552,20 +652,36 @@ struct AddTransactionView: View {
 
         } else {
             let isPast = date <= Date()
-            let tx = Transaction(
-                accountId:                    sourceAccountId,
-                amount:                       transferAmount,
-                date:                         date,
-                isPast:                       isPast,
-                isConfirmed:                  isPast,
-                categoryId:                   selectedCategoryId,
-                isTransfer:                   true,
-                transferDestinationAccountId: destAccountId
-            )
-            context.insert(tx)
             if isPast {
+                let tx = Transaction(
+                    accountId:                    sourceAccountId,
+                    amount:                       transferAmount,
+                    date:                         date,
+                    isPast:                       true,
+                    isConfirmed:                  true,
+                    categoryId:                   selectedCategoryId,
+                    isTransfer:                   true,
+                    transferDestinationAccountId: destAccountId
+                )
+                context.insert(tx)
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
                 applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
+            } else {
+                // Transfert ponctuel futur → RecurringTransaction .oneTime
+                let recurring = RecurringTransaction(
+                    accountId:                    sourceAccountId,
+                    name:                         name.trimmingCharacters(in: .whitespaces),
+                    amount:                       transferAmount,
+                    frequency:                    .oneTime,
+                    startDate:                    date,
+                    endDate:                      nil,
+                    isIncome:                     false,
+                    categoryId:                   selectedCategoryId,
+                    isSubscription:               false,
+                    isTransfer:                   true,
+                    transferDestinationAccountId: destAccountId
+                )
+                context.insert(recurring)
             }
         }
     }

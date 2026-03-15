@@ -12,6 +12,7 @@ import Foundation
 extension Frequency {
     var labelFR: String {
         switch self {
+        case .oneTime:     return "Ponctuel"
         case .weekly:      return "Hebdomadaire"
         case .biweekly:    return "Aux deux semaines"
         case .semimonthly: return "Deux fois par mois"
