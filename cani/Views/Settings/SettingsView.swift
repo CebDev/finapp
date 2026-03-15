@@ -30,9 +30,9 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Période de paie") {
+                Section("Période") {
                     NavigationLink(value: SettingsDestination.payPeriod) {
-                        Label("Paie & alertes", systemImage: "calendar.badge.clock")
+                        Label("Périodes & alertes", systemImage: "calendar.badge.clock")
                     }
                 }
 
@@ -62,7 +62,7 @@ struct SettingsView: View {
                 case .categories:
                     CategoriesView()
                 case .payPeriod:
-                    PayPeriodSettingsView()
+                    PeriodSettingsView()
                 case .general:
                     ComingSoonView(titleKey: "settings.row.general")
                 case .profile:
@@ -78,65 +78,68 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - PayPeriodSettingsView
+// MARK: - PeriodSettingsView
 
-private struct PayPeriodSettingsView: View {
+private struct PeriodSettingsView: View {
     @Query private var settingsArray: [UserSettings]
-    @Environment(\.modelContext) private var context
 
     var body: some View {
         if let settings = settingsArray.first {
-            PayPeriodForm(settings: settings)
+            PeriodSettingsForm(settings: settings)
         } else {
-            // Cas rare : l'onboarding (PeriodSetupSheet) n'a pas encore été complété.
-            // Créer les réglages par défaut pour permettre la configuration depuis les réglages.
             ContentUnavailableView(
                 "Périodes non configurées",
                 systemImage: "calendar.badge.exclamationmark",
                 description: Text("Accédez à l'onglet Projection pour configurer vos périodes.")
             )
-            .navigationTitle("Période de paie")
+            .navigationTitle("Périodes")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
 
-// MARK: - PayPeriodForm
+// MARK: - PeriodSettingsForm
 
-private struct PayPeriodForm: View {
+private struct PeriodSettingsForm: View {
     @Bindable var settings: UserSettings
 
-    @State private var thresholdText: String = ""
-    @State private var thresholdInvalid: Bool = false
+    @State private var thresholdText:    String = ""
+    @State private var thresholdInvalid: Bool   = false
 
     var body: some View {
         Form {
-            // MARK: Fréquence de paie
-            Section("Fréquence de paie") {
+            // MARK: Fréquence de période
+            Section("Fréquence de période") {
                 Picker("Fréquence", selection: $settings.payPeriodFrequency) {
                     Text("Aux deux semaines").tag(Frequency.biweekly)
                     Text("Mensuel").tag(Frequency.monthly)
                 }
 
                 if settings.payPeriodFrequency == .biweekly {
-                    Picker("Jour de paie", selection: $settings.payDayOfWeek) {
+                    Picker("Jour de début", selection: $settings.periodStartDayOfWeek) {
                         ForEach(weekdayOptions, id: \.value) { opt in
                             Text(opt.label).tag(opt.value)
                         }
                     }
                     DatePicker(
-                        "Prochaine paie",
-                        selection: $settings.nextPayDate,
+                        "Date de référence",
+                        selection: $settings.periodAnchorDate,
                         displayedComponents: .date
                     )
                     .environment(\.locale, Locale(identifier: "fr_CA"))
                 }
 
                 if settings.payPeriodFrequency == .monthly {
-                    Picker("Jour du mois", selection: $settings.payDayOfMonth) {
+                    Picker("Début de période le", selection: $settings.periodStartDay) {
                         ForEach(1...31, id: \.self) { d in
                             Text("\(d)").tag(d)
                         }
+                    }
+
+                    if let preview = periodPreview {
+                        Text(preview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -176,11 +179,19 @@ private struct PayPeriodForm: View {
                     .font(.caption)
             }
         }
-        .navigationTitle("Période de paie")
+        .navigationTitle("Périodes")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             thresholdText = "\(settings.tightThreshold)"
         }
+    }
+
+    // MARK: - Aperçu période mensuelle
+
+    private var periodPreview: String? {
+        let day = settings.periodStartDay
+        if day == 1 { return "Période calendaire : du 1er à la fin du mois" }
+        return "Période du \(day) au \(day - 1) du mois suivant"
     }
 
     // MARK: - Helpers

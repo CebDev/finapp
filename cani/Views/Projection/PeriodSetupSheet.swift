@@ -14,12 +14,12 @@ struct PeriodSetupSheet: View {
 
     // MARK: - Form state
 
-    @State private var frequency:      Frequency = .biweekly
-    @State private var payDayOfWeek:   Int       = 4        // Jeudi
-    @State private var nextPayDate:    Date       = Date()
-    @State private var payDayOfMonth:  Int        = 1
-    @State private var tightThreshold: String     = "500"
-    @State private var carryForward:   Bool       = true
+    @State private var frequency:           Frequency = .biweekly
+    @State private var periodStartDayOfWeek: Int      = 4        // Jeudi
+    @State private var periodAnchorDate:    Date      = Date()
+    @State private var periodStartDay:      Int       = 1
+    @State private var tightThreshold:      String    = "500"
+    @State private var carryForward:        Bool      = true
 
     // MARK: - Body
 
@@ -66,7 +66,7 @@ struct PeriodSetupSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Prêt à projeter")
                             .font(.headline)
-                        Text("Configurez votre rythme de paie")
+                        Text("Configurez votre rythme de période")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -81,31 +81,38 @@ struct PeriodSetupSheet: View {
     }
 
     private var frequencySection: some View {
-        Section("Fréquence de paie") {
+        Section("Fréquence de période") {
             Picker("Fréquence", selection: $frequency) {
                 Text("Aux deux semaines").tag(Frequency.biweekly)
                 Text("Mensuel").tag(Frequency.monthly)
             }
 
             if frequency == .biweekly {
-                Picker("Jour de paie", selection: $payDayOfWeek) {
+                Picker("Jour de début", selection: $periodStartDayOfWeek) {
                     ForEach(weekdayOptions, id: \.value) { opt in
                         Text(opt.label).tag(opt.value)
                     }
                 }
                 DatePicker(
-                    "Prochaine paie",
-                    selection: $nextPayDate,
+                    "Date de référence",
+                    selection: $periodAnchorDate,
                     displayedComponents: .date
                 )
                 .environment(\.locale, Locale(identifier: "fr_CA"))
             }
 
             if frequency == .monthly {
-                Picker("Jour du mois", selection: $payDayOfMonth) {
+                Picker("Début de période le", selection: $periodStartDay) {
                     ForEach(1...31, id: \.self) { d in
                         Text("\(d)").tag(d)
                     }
+                }
+
+                // Aperçu de la période résultante
+                if let preview = periodPreview {
+                    Text(preview)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -137,6 +144,18 @@ struct PeriodSetupSheet: View {
         }
     }
 
+    // MARK: - Aperçu période mensuelle
+
+    private var periodPreview: String? {
+        guard frequency == .monthly else { return nil }
+        let day = periodStartDay
+        let endDay = day == 1 ? 31 : day - 1
+        if day == 1 {
+            return "Période calendaire : du 1er à la fin du mois"
+        }
+        return "Période du \(day) au \(endDay) du mois suivant"
+    }
+
     // MARK: - Save
 
     private func save() {
@@ -147,13 +166,13 @@ struct PeriodSetupSheet: View {
             return Decimal(string: normalized) ?? 500
         }()
 
-        let settings                  = UserSettings()
-        settings.payPeriodFrequency   = frequency
-        settings.payDayOfWeek         = payDayOfWeek
-        settings.nextPayDate          = nextPayDate
-        settings.payDayOfMonth        = payDayOfMonth
-        settings.tightThreshold       = threshold
-        settings.carryForwardBalance  = carryForward
+        let settings                     = UserSettings()
+        settings.payPeriodFrequency      = frequency
+        settings.periodStartDayOfWeek    = periodStartDayOfWeek
+        settings.periodAnchorDate        = periodAnchorDate
+        settings.periodStartDay          = periodStartDay
+        settings.tightThreshold          = threshold
+        settings.carryForwardBalance     = carryForward
         context.insert(settings)
         try? context.save()
         dismiss()

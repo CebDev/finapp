@@ -14,7 +14,7 @@ struct ProjectionView: View {
     @Query                                   private var settingsArray:    [UserSettings]
     @Query                                   private var allOverrides:     [TransactionOverride]
     @Query(
-        filter: #Predicate<Transaction> { $0.isPast },
+        filter: #Predicate<Transaction> { $0.isPaid },
         sort:   \Transaction.date
     )                                        private var allTransactions:  [Transaction]
 

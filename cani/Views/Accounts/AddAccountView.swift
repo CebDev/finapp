@@ -276,9 +276,8 @@ struct AddAccountView: View {
                 accountId:   account.id,
                 amount:      contribution,
                 date:        periodStart,
-                isPast:      true,
-                isConfirmed: true,
-                notes:       "Solde initial"
+                notes:       "Solde initial",
+                isPaid:      true
             )
             context.insert(openingTx)
         }

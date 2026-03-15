@@ -10,14 +10,15 @@ import SwiftData
 
 @Model
 class UserSettings {
-    /// Fréquence de paie — .biweekly ou .monthly uniquement
+    /// Fréquence de période — .biweekly ou .monthly uniquement
     var payPeriodFrequency: Frequency = Frequency.biweekly
-    /// Jour de paie pour biweekly : 0=Dim … 6=Sam, défaut 4 (Jeudi)
-    var payDayOfWeek: Int = 4
-    /// Jour du mois pour la paie mensuelle (1–31)
-    var payDayOfMonth: Int = 1
-    /// Date de la prochaine paie — anchor pour le calcul des périodes
-    var nextPayDate: Date = Date()
+    /// Biweekly — jour de la semaine de début de période : 0=Dim … 6=Sam, défaut 4 (Jeudi)
+    var periodStartDayOfWeek: Int = 4
+    /// Biweekly — date de référence pour ancrer la séquence de périodes
+    var periodAnchorDate: Date = Date()
+    /// Monthly — jour du mois où commence chaque période (1–31, clampé au dernier jour du mois)
+    /// Ex: 15 → période du 15 au 14 du mois suivant. 1 → période calendaire.
+    var periodStartDay: Int = 1
     /// Solde projeté en dessous duquel une période est considérée "serrée"
     var tightThreshold: Decimal = 500
     /// Devise par défaut
@@ -30,7 +31,6 @@ class UserSettings {
 
     // MARK: - Singleton
 
-    /// Retourne l'unique instance de UserSettings, ou en crée une avec les valeurs par défaut.
     @discardableResult
     static func current(context: ModelContext) -> UserSettings {
         let descriptor = FetchDescriptor<UserSettings>()
@@ -42,7 +42,6 @@ class UserSettings {
         return settings
     }
 
-    /// Insère les réglages par défaut si aucune instance n'existe encore.
     static func seedIfNeeded(context: ModelContext) {
         let descriptor = FetchDescriptor<UserSettings>()
         let count = (try? context.fetchCount(descriptor)) ?? 0

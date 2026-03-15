@@ -15,7 +15,7 @@ struct HomeView: View {
     @Query                                   private var settingsArray: [UserSettings]
     @Query                                   private var allOverrides:  [TransactionOverride]
     @Query(
-        filter: #Predicate<Transaction> { $0.isPast },
+        filter: #Predicate<Transaction> { $0.isPaid },
         sort:   \Transaction.date,
         order:  .reverse
     )                                        private var allPastTransactions: [Transaction]
