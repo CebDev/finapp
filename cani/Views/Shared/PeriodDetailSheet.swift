@@ -568,7 +568,7 @@ struct PeriodDetailSheet: View {
 
     private func deleteRealTx(_ tx: Transaction) {
         // Annuler l'effet sur le solde si la transaction est passée
-        if tx.isPast, let account = allAccounts.first(where: { $0.id == tx.accountId }) {
+        if tx.isPaid, let account = allAccounts.first(where: { $0.id == tx.accountId }) {
             account.currentBalance -= tx.amount
         }
         // Si liée à une récurrence, supprimer le marqueur isPaid pour que l'occurrence redevienne planifiée
@@ -589,7 +589,7 @@ struct PeriodDetailSheet: View {
         let delta          = newSignedAmount - tx.amount
         let accountChanged = newAccountId != tx.accountId
 
-        if tx.isPast {
+        if tx.isPaid {
             if accountChanged {
                 if let oldAccount = allAccounts.first(where: { $0.id == tx.accountId }) {
                     oldAccount.currentBalance -= tx.amount

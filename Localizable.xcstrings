@@ -1189,7 +1189,7 @@
     "Configuration des périodes" : {
 
     },
-    "Configurez votre rythme de paie" : {
+    "Configurez votre rythme de période" : {
 
     },
     "Confirmée" : {
@@ -1219,7 +1219,13 @@
     "Date de paiement" : {
 
     },
+    "Date de référence" : {
+
+    },
     "Début" : {
+
+    },
+    "Début de période le" : {
 
     },
     "Début le" : {
@@ -1314,7 +1320,7 @@
     "Fréquence" : {
 
     },
-    "Fréquence de paie" : {
+    "Fréquence de période" : {
 
     },
     "GÉNÉRAL" : {
@@ -1531,10 +1537,10 @@
     "Jeux" : {
 
     },
-    "Jour de la semaine" : {
+    "Jour de début" : {
 
     },
-    "Jour de paie" : {
+    "Jour de la semaine" : {
 
     },
     "Jour du mois" : {
@@ -1645,13 +1651,13 @@
     "Ouvrir Réglages" : {
 
     },
-    "Paie & alertes" : {
-
-    },
     "Pas encore" : {
 
     },
     "Passifs" : {
+
+    },
+    "Période" : {
 
     },
     "Période de paie" : {
@@ -1668,6 +1674,12 @@
       }
     },
     "Période serrée — solde bas prévu" : {
+
+    },
+    "Périodes" : {
+
+    },
+    "Périodes & alertes" : {
 
     },
     "Périodes non configurées" : {
@@ -1694,9 +1706,6 @@
       }
     },
     "Prêt à projeter" : {
-
-    },
-    "Prochaine paie" : {
 
     },
     "Prochaines opérations" : {

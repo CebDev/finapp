@@ -126,7 +126,7 @@ struct PeriodProgressChart: View {
     private func buildRealDailyDelta(calendar: Calendar, startDay: Date, endDay: Date) -> [Date: Decimal] {
         var deltaByDay: [Date: Decimal] = [:]
 
-        for tx in realTransactions where tx.isConfirmed {
+        for tx in realTransactions where tx.isPaid {
             let day = calendar.startOfDay(for: tx.date)
             guard day >= startDay && day <= endDay else { continue }
             deltaByDay[day, default: 0] += budgetDelta(

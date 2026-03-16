@@ -63,7 +63,7 @@ struct AccountTransactionsSheet: View {
             filter: #Predicate<Transaction> {
                 $0.accountId == accountId &&
                 $0.date      >= cutoff    &&
-                $0.isPast    == true
+                $0.isPaid    == true
             },
             sort: \Transaction.date,
             order: .reverse

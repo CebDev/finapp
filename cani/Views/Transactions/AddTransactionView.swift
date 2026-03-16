@@ -501,18 +501,17 @@ struct AddTransactionView: View {
             existing.transferDestinationAccountId = nil
 
         } else if isEditingOccurrence, let recurring = editingOccurrenceRecurring {
-            let isPast = date <= Date()
+            let isPaid = date <= Date()
             let tx = Transaction(
                 accountId:              accountId,
                 recurringTransactionId: recurring.id,
                 amount:                 signedAmount,
                 date:                   date,
-                isPast:                 isPast,
-                isConfirmed:            isPast,
-                categoryId:             selectedCategoryId
+                categoryId:             selectedCategoryId,
+                isPaid:                 isPaid,
             )
             context.insert(tx)
-            if isPast { applyBalance(accountId: accountId, signedAmount: signedAmount) }
+            if isPaid { applyBalance(accountId: accountId, signedAmount: signedAmount) }
 
         } else if isRecurring {
             let recurring = RecurringTransaction(
@@ -537,24 +536,22 @@ struct AddTransactionView: View {
                     recurringTransactionId: recurring.id,
                     amount:                 signedAmount,
                     date:                   date,
-                    isPast:                 true,
-                    isConfirmed:            true,
-                    categoryId:             selectedCategoryId
+                    categoryId:             selectedCategoryId,
+                    isPaid:                 true
                 )
                 context.insert(tx)
                 applyBalance(accountId: accountId, signedAmount: signedAmount)
             }
 
         } else {
-            let isPast = date <= Date()
-            if isPast {
+            let isPaid = date <= Date()
+            if isPaid {
                 let tx = Transaction(
                     accountId:   accountId,
                     amount:      signedAmount,
                     date:        date,
-                    isPast:      true,
-                    isConfirmed: true,
-                    categoryId:  selectedCategoryId
+                    categoryId:  selectedCategoryId,
+                    isPaid:      true
                 )
                 context.insert(tx)
                 applyBalance(accountId: accountId, signedAmount: signedAmount)
@@ -597,20 +594,19 @@ struct AddTransactionView: View {
             existing.transferDestinationAccountId = destAccountId
 
         } else if isEditingOccurrence, let recurring = editingOccurrenceRecurring {
-            let isPast = date <= Date()
+            let isPaid = date <= Date()
             let tx = Transaction(
                 accountId:                    sourceAccountId,
                 recurringTransactionId:       recurring.id,
                 amount:                       transferAmount,
                 date:                         date,
-                isPast:                       isPast,
-                isConfirmed:                  isPast,
                 categoryId:                   selectedCategoryId,
                 isTransfer:                   true,
-                transferDestinationAccountId: destAccountId
+                transferDestinationAccountId: destAccountId,
+                isPaid:                       isPaid
             )
             context.insert(tx)
-            if isPast {
+            if isPaid {
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
                 applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
             }
@@ -639,11 +635,10 @@ struct AddTransactionView: View {
                     recurringTransactionId:       recurring.id,
                     amount:                       transferAmount,
                     date:                         date,
-                    isPast:                       true,
-                    isConfirmed:                  true,
                     categoryId:                   selectedCategoryId,
                     isTransfer:                   true,
-                    transferDestinationAccountId: destAccountId
+                    transferDestinationAccountId: destAccountId,
+                    isPaid:                       true
                 )
                 context.insert(tx)
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
@@ -651,17 +646,16 @@ struct AddTransactionView: View {
             }
 
         } else {
-            let isPast = date <= Date()
-            if isPast {
+            let isPaid = date <= Date()
+            if isPaid {
                 let tx = Transaction(
                     accountId:                    sourceAccountId,
                     amount:                       transferAmount,
                     date:                         date,
-                    isPast:                       true,
-                    isConfirmed:                  true,
                     categoryId:                   selectedCategoryId,
                     isTransfer:                   true,
-                    transferDestinationAccountId: destAccountId
+                    transferDestinationAccountId: destAccountId,
+                    isPaid:                       true
                 )
                 context.insert(tx)
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)

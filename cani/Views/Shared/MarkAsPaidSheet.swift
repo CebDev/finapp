@@ -296,10 +296,9 @@ struct MarkAsPaidSheet: View {
             recurringTransactionId: transaction.id,
             amount:                 signedAmount,
             date:                   paymentDate,
-            isPast:                 true,
-            isConfirmed:            true,
             categoryId:             transaction.categoryId,
-            notes:                  notes.isEmpty ? nil : notes
+            notes:                  notes.isEmpty ? nil : notes,
+            isPaid:                 true,
         )
         context.insert(realTx)
 
