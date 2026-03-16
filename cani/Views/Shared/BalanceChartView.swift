@@ -136,6 +136,15 @@ struct BalanceChartView: View {
         return (vals.min() ?? 0, vals.max() ?? 1)
     }
 
+    /// Domaine Y serré autour des données pour maximiser la lisibilité des variations.
+    /// Ajoute 15 % de marge en haut et en bas.
+    private var tightYDomain: ClosedRange<Double> {
+        let (lo, hi) = yRange
+        let range = max(hi - lo, 1)
+        let pad   = range * 0.15
+        return (lo - pad)...(hi + pad)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -151,6 +160,9 @@ struct BalanceChartView: View {
             buildChart()
                 .chartXScale(domain: miniXDomain)
                 .chartYAxis(.hidden)
+                .chartPlotStyle { plot in
+                    plot.padding(.top, todayBalance != nil ? 44 : 0)
+                }
                 .frame(height: 120)
         }
     }
@@ -167,6 +179,7 @@ struct BalanceChartView: View {
             todayRule()
             scrubbingRule()
         }
+        .chartYScale(domain: tightYDomain)
         .chartXAxis { xAxisContent }
         .chartOverlay { proxy in
             GeometryReader { _ in
