@@ -505,6 +505,7 @@ struct AddTransactionView: View {
             let tx = Transaction(
                 accountId:              accountId,
                 recurringTransactionId: recurring.id,
+                name:                   name.trimmingCharacters(in: .whitespaces),
                 amount:                 signedAmount,
                 date:                   date,
                 categoryId:             selectedCategoryId,
@@ -534,6 +535,7 @@ struct AddTransactionView: View {
                 let tx = Transaction(
                     accountId:              accountId,
                     recurringTransactionId: recurring.id,
+                    name:                   name.trimmingCharacters(in: .whitespaces),
                     amount:                 signedAmount,
                     date:                   date,
                     categoryId:             selectedCategoryId,
@@ -548,6 +550,7 @@ struct AddTransactionView: View {
             if isPaid {
                 let tx = Transaction(
                     accountId:   accountId,
+                    name:        name.trimmingCharacters(in: .whitespaces),
                     amount:      signedAmount,
                     date:        date,
                     categoryId:  selectedCategoryId,
@@ -598,6 +601,7 @@ struct AddTransactionView: View {
             let tx = Transaction(
                 accountId:                    sourceAccountId,
                 recurringTransactionId:       recurring.id,
+                name:                         name.trimmingCharacters(in: .whitespaces),
                 amount:                       transferAmount,
                 date:                         date,
                 categoryId:                   selectedCategoryId,
@@ -633,6 +637,7 @@ struct AddTransactionView: View {
                 let tx = Transaction(
                     accountId:                    sourceAccountId,
                     recurringTransactionId:       recurring.id,
+                    name:                         name.trimmingCharacters(in: .whitespaces),
                     amount:                       transferAmount,
                     date:                         date,
                     categoryId:                   selectedCategoryId,
@@ -650,6 +655,7 @@ struct AddTransactionView: View {
             if isPaid {
                 let tx = Transaction(
                     accountId:                    sourceAccountId,
+                    name:                         name.trimmingCharacters(in: .whitespaces),
                     amount:                       transferAmount,
                     date:                         date,
                     categoryId:                   selectedCategoryId,

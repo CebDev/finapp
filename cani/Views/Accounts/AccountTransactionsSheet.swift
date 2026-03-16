@@ -185,7 +185,7 @@ struct AccountTransactionsSheet: View {
                 Button("Annuler", role: .cancel) { tappedEntry = nil }
             }
             .sheet(item: $editingEntry) { entry in
-                EditEntrySheet(entry: entry, accounts: allAccounts, categories: categories) { newSignedAmount, newDate, newNotes, newAccountId, newCategoryId in
+                EditEntrySheet(entry: entry, accounts: allAccounts, categories: categories,) { newSignedAmount, newDate, newNotes, newAccountId, newCategoryId in
                     updateEntry(entry, newSignedAmount: newSignedAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId, newCategoryId: newCategoryId)
                 }
             }

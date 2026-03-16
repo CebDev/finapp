@@ -509,6 +509,7 @@ struct HomeView: View {
                 .flatMap { id in accounts.first { $0.id == id } }?.name
             return destName.map { "Transfert → \($0)" } ?? "Transfert"
         }
+        if !tx.name.isEmpty { return tx.name }
         if let recurId = tx.recurringTransactionId,
            let recurring = recurring.first(where: { $0.id == recurId }) {
             return recurring.name
