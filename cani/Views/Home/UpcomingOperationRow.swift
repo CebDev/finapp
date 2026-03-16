@@ -45,6 +45,15 @@ struct UpcomingOperationRow: View {
                     Text(relativeDateLabel(operation.date))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                    if let accountName = operation.accountName {
+                        Text("·")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary.opacity(0.4))
+                        Text(accountName)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     if operation.isPaid {
                         Text("· payée")
                             .font(.system(size: 12))
@@ -91,9 +100,9 @@ struct UpcomingOperationRow: View {
         case 2...7:
             let f = DateFormatter()
             f.locale     = Locale(identifier: "fr_CA")
-            f.dateFormat = "EEE"
+            f.dateFormat = "EEEE"
             let raw = f.string(from: date)
-            return raw.prefix(1).uppercased() + raw.dropFirst() + "."
+            return raw.prefix(1).uppercased() + raw.dropFirst()
         default:
             return "Dans \(days) jours"
         }

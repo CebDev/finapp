@@ -59,6 +59,8 @@ struct AddTransactionView: View {
     var editingOccurrenceRecurring: RecurringTransaction? = nil
     /// Date de l'occurrence à modifier.
     var editingOccurrenceDate: Date? = nil
+    /// Non-nil → compte pré-sélectionné à l'ouverture.
+    var defaultAccountId: UUID? = nil
     /// true → le toggle "Transaction récurrente" est pré-coché.
     var defaultRecurring: Bool = false
     /// true → le toggle "Abonnement" est pré-coché.
@@ -617,15 +619,26 @@ struct AddTransactionView: View {
                   let occDate   = editingOccurrenceDate {
             let cal  = Calendar.current
             let norm = cal.startOfDay(for: occDate)
-            if let tx = allTransactions.first(where: {
+            let occurrenceTxs = allTransactions.filter {
                 $0.recurringTransactionId == recurring.id &&
                 cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: norm)
-            }) {
-                tx.name         = name.trimmingCharacters(in: .whitespaces)
-                tx.amount       = transferAmount
-                tx.date         = date
-                tx.categoryId   = selectedCategoryId
-                tx.isCustomized = true
+            }
+            // Mettre à jour la transaction source (débit)
+            if let sourceTx = occurrenceTxs.first(where: { $0.accountId == recurring.accountId }) {
+                sourceTx.name         = name.trimmingCharacters(in: .whitespaces)
+                sourceTx.amount       = -transferAmount
+                sourceTx.date         = date
+                sourceTx.categoryId   = selectedCategoryId
+                sourceTx.isCustomized = true
+            }
+            // Mettre à jour la transaction destination (crédit)
+            if let destId = recurring.transferDestinationAccountId,
+               let destTx = occurrenceTxs.first(where: { $0.accountId == destId }) {
+                destTx.name         = name.trimmingCharacters(in: .whitespaces)
+                destTx.amount       = transferAmount
+                destTx.date         = date
+                destTx.categoryId   = selectedCategoryId
+                destTx.isCustomized = true
             }
 
         // MARK: Nouvelle récurrence transfert
@@ -649,11 +662,15 @@ struct AddTransactionView: View {
             context.insert(recurring)
             RecurringTransactionService.generateOccurrences(for: recurring, context: context)
             if date <= Date() {
-                let firstTx = allTransactions
-                    .filter { $0.recurringTransactionId == recurring.id }
-                    .sorted { $0.date < $1.date }
-                    .first
-                firstTx?.isPaid = true
+                // Marquer les deux côtés de la première occurrence comme payés
+                let cal        = Calendar.current
+                let targetDay  = cal.startOfDay(for: date)
+                allTransactions
+                    .filter {
+                        $0.recurringTransactionId == recurring.id &&
+                        cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: targetDay)
+                    }
+                    .forEach { $0.isPaid = true }
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
                 applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
             }
@@ -661,17 +678,27 @@ struct AddTransactionView: View {
         // MARK: Transfert manuel
         } else {
             let isPaid = date <= Date()
-            let tx = Transaction(
+            let sourceTx = Transaction(
                 accountId:                    sourceAccountId,
                 name:                         name.trimmingCharacters(in: .whitespaces),
-                amount:                       transferAmount,
+                amount:                       -transferAmount,    // source : argent qui sort
                 date:                         date,
                 categoryId:                   selectedCategoryId,
                 isTransfer:                   true,
                 transferDestinationAccountId: destAccountId,
                 isPaid:                       isPaid
             )
-            context.insert(tx)
+            let destTx = Transaction(
+                accountId:  destAccountId,
+                name:       name.trimmingCharacters(in: .whitespaces),
+                amount:     transferAmount,                         // destination : argent qui entre
+                date:       date,
+                categoryId: selectedCategoryId,
+                isTransfer: true,
+                isPaid:     isPaid
+            )
+            context.insert(sourceTx)
+            context.insert(destTx)
             if isPaid {
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
                 applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
@@ -732,7 +759,11 @@ struct AddTransactionView: View {
             isRecurring        = false
 
         } else {
-            if accounts.count == 1 { selectedAccountId = accounts[0].id }
+            if let id = defaultAccountId {
+                selectedAccountId = id
+            } else if accounts.count == 1 {
+                selectedAccountId = accounts[0].id
+            }
             if defaultRecurring || defaultSubscription { isRecurring = true }
             if defaultSubscription { isSubscription = true }
         }

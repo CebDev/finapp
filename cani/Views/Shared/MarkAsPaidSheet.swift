@@ -26,7 +26,9 @@ struct MarkAsPaidSheet: View {
     // MARK: - Computed
 
     private var isIncome:     Bool  { transaction.isIncome }
-    private var amountColor:  Color { isIncome ? .green : .orange }
+    private var amountColor:  Color {
+        transaction.isTransfer ? .indigo : (isIncome ? .green : .orange)
+    }
 
     private var selectedAccount: Account? {
         accounts.first { $0.id == selectedAccountId }
@@ -252,38 +254,19 @@ struct MarkAsPaidSheet: View {
     // MARK: - Save
 
     private func save() {
-        let rawString   = amountString
+        let rawString       = amountString
             .replacingOccurrences(of: ",", with: ".")
             .replacingOccurrences(of: " ", with: "")
-        let parsed      = Decimal(string: rawString) ?? abs(transaction.amount)
-        let signedAmount: Decimal = isIncome ? parsed : -parsed
-        let cal         = Calendar.current
-        let normalizedOcc = cal.startOfDay(for: occurrenceDate)
+        let parsed          = Decimal(string: rawString) ?? abs(transaction.amount)
+        let cal             = Calendar.current
+        let normalizedOcc   = cal.startOfDay(for: occurrenceDate)
         let targetAccountId = selectedAccountId ?? transaction.accountId
 
-        // Trouver la Transaction existante pour cette occurrence
-        guard let tx = allTransactions.first(where: {
-            $0.recurringTransactionId == transaction.id &&
-            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
-        }) else { return }
-
-        // Si déjà payée, annuler l'effet précédent sur le solde avant de corriger
-        if tx.isPaid {
-            if let prevAccount = accounts.first(where: { $0.id == tx.accountId }) {
-                prevAccount.currentBalance -= tx.amount
-            }
-        }
-
-        // Mettre à jour la Transaction
-        tx.isPaid     = true
-        tx.amount     = signedAmount
-        tx.date       = paymentDate
-        tx.accountId  = targetAccountId
-        tx.notes      = notes.isEmpty ? nil : notes
-
-        // Appliquer le montant au solde du compte cible
-        if let account = accounts.first(where: { $0.id == targetAccountId }) {
-            account.currentBalance += signedAmount
+        if transaction.isTransfer {
+            saveTransfer(parsed: parsed, normalizedOcc: normalizedOcc, targetAccountId: targetAccountId, cal: cal)
+        } else {
+            let signedAmount: Decimal = isIncome ? parsed : -parsed
+            saveRegular(signedAmount: signedAmount, normalizedOcc: normalizedOcc, targetAccountId: targetAccountId, cal: cal)
         }
 
         // Générer la prochaine occurrence pour maintenir la fenêtre glissante
@@ -297,17 +280,87 @@ struct MarkAsPaidSheet: View {
         dismiss()
     }
 
+    private func saveRegular(signedAmount: Decimal, normalizedOcc: Date, targetAccountId: UUID, cal: Calendar) {
+        guard let tx = allTransactions.first(where: {
+            $0.recurringTransactionId == transaction.id &&
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
+        }) else { return }
+
+        if tx.isPaid, let prev = accounts.first(where: { $0.id == tx.accountId }) {
+            prev.currentBalance -= tx.amount
+        }
+
+        tx.isPaid    = true
+        tx.amount    = signedAmount
+        tx.date      = paymentDate
+        tx.accountId = targetAccountId
+        tx.notes     = notes.isEmpty ? nil : notes
+
+        if let account = accounts.first(where: { $0.id == targetAccountId }) {
+            account.currentBalance += signedAmount
+        }
+    }
+
+    private func saveTransfer(parsed: Decimal, normalizedOcc: Date, targetAccountId: UUID, cal: Calendar) {
+        guard let destAccountId = transaction.transferDestinationAccountId else { return }
+
+        let occurrenceTxs = allTransactions.filter {
+            $0.recurringTransactionId == transaction.id &&
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
+        }
+
+        guard let sourceTx = occurrenceTxs.first(where: { $0.accountId == transaction.accountId }),
+              let destTx   = occurrenceTxs.first(where: { $0.accountId == destAccountId })
+        else { return }
+
+        // Annuler les effets précédents si déjà payés
+        if sourceTx.isPaid, let acc = accounts.first(where: { $0.id == sourceTx.accountId }) {
+            acc.currentBalance -= sourceTx.amount
+        }
+        if destTx.isPaid, let acc = accounts.first(where: { $0.id == destTx.accountId }) {
+            acc.currentBalance -= destTx.amount
+        }
+
+        // Mettre à jour la transaction source (débit)
+        sourceTx.isPaid    = true
+        sourceTx.amount    = -parsed
+        sourceTx.date      = paymentDate
+        sourceTx.accountId = targetAccountId
+        sourceTx.notes     = notes.isEmpty ? nil : notes
+
+        // Mettre à jour la transaction destination (crédit)
+        destTx.isPaid = true
+        destTx.amount = parsed
+        destTx.date   = paymentDate
+
+        // Appliquer les soldes
+        if let acc = accounts.first(where: { $0.id == targetAccountId }) {
+            acc.currentBalance -= parsed
+        }
+        if let acc = accounts.first(where: { $0.id == destAccountId }) {
+            acc.currentBalance += parsed
+        }
+    }
+
     // MARK: - Prefill
 
     private func prefill() {
         let cal           = Calendar.current
         let normalizedOcc = cal.startOfDay(for: occurrenceDate)
 
-        if let tx = allTransactions.first(where: {
-            $0.recurringTransactionId == transaction.id &&
-            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
-        }) {
-            // Pré-remplir depuis la Transaction existante
+        // Pour les transferts, toujours pré-remplir depuis la transaction source
+        let tx = transaction.isTransfer
+            ? allTransactions.first(where: {
+                $0.recurringTransactionId == transaction.id &&
+                $0.accountId == transaction.accountId &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
+              })
+            : allTransactions.first(where: {
+                $0.recurringTransactionId == transaction.id &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
+              })
+
+        if let tx {
             amountString      = formatForInput(abs(tx.isPaid ? tx.amount : transaction.amount))
             paymentDate       = tx.isPaid ? tx.date : occurrenceDate
             selectedAccountId = tx.accountId

@@ -18,6 +18,7 @@ struct UpcomingOperation: Identifiable {
     let transaction: Transaction
     let logo:        String?    // non-nil si abonnement avec logo
     let isIncome:    Bool
+    let accountName: String?    // nom du compte source
     var isPaid:      Bool = false
 }
 
@@ -32,6 +33,7 @@ enum UpcomingOperationsService {
         from transactions: [Transaction],
         categories:  [Category]             = [],
         recurringTx: [RecurringTransaction] = [],
+        accounts:    [Account]              = [],
         after: Date = .now
     ) -> [UpcomingOperation] {
         let calendar    = Calendar.current
@@ -52,6 +54,7 @@ enum UpcomingOperationsService {
                 let logo: String? = (rt?.isSubscription == true && !(rt?.logo ?? "").isEmpty)
                     ? rt?.logo
                     : nil
+                let accountName = accounts.first(where: { $0.id == tx.accountId })?.name
                 return UpcomingOperation(
                     id:          UUID(),
                     name:        tx.name,
@@ -61,6 +64,7 @@ enum UpcomingOperationsService {
                     transaction: tx,
                     logo:        logo,
                     isIncome:    tx.amount > 0,
+                    accountName: accountName,
                     isPaid:      tx.isPaid
                 )
             }

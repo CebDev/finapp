@@ -442,6 +442,7 @@ struct HomeView: View {
         let isIncome   = tx.amount > 0
         let isTransfer = tx.isTransfer
         let cat        = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
+        let logo       = recurringFor(tx)?.logo ?? ""
         let label      = recentTransactionLabel(tx)
         let accountName = accounts.first(where: { $0.id == tx.accountId })?.name ?? ""
 
@@ -456,6 +457,8 @@ struct HomeView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.indigo)
                 }
+            } else if !logo.isEmpty {
+                SubscriptionLogoImage(logo: logo, size: 38)
             } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 38)
             } else {
@@ -493,7 +496,7 @@ struct HomeView: View {
             Spacer()
 
             if isTransfer {
-                Text(CurrencyFormatter.shared.format(abs(tx.amount)))
+                Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(tx.amount)))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.indigo)
             } else {
@@ -554,7 +557,8 @@ struct HomeView: View {
             5,
             from:        allTransactions,
             categories:  allCategories,
-            recurringTx: allRecurring
+            recurringTx: allRecurring,
+            accounts:    accounts
         )
         return VStack(alignment: .leading, spacing: 0) {
             Text("Prochaines opérations")

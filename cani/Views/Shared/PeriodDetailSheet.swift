@@ -235,9 +235,14 @@ struct PeriodDetailSheet: View {
     private func paidRow(_ tx: Transaction) -> some View {
         let isIncome = tx.amount > 0
         let cat      = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
+        let logo     = recurring(for: tx)?.logo ?? ""
 
         return HStack(spacing: 12) {
-            if let cat {
+            if tx.isTransfer {
+                CategoryIconBadge(icon: "arrow.left.arrow.right", color: "#5856D6", size: 36)
+            } else if !logo.isEmpty {
+                SubscriptionLogoImage(logo: logo, size: 38)
+            } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
                 CategoryIconBadge(
@@ -260,7 +265,7 @@ struct PeriodDetailSheet: View {
             Spacer()
             Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(tx.amount)))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isIncome ? Color.green : Color.orange)
+                .foregroundStyle(tx.isTransfer ? Color.indigo : (isIncome ? Color.green : Color.orange))
         }
         .padding(.horizontal, 20).padding(.vertical, 11)
         .background(Color(.systemBackground))
@@ -283,6 +288,8 @@ struct PeriodDetailSheet: View {
         return HStack(spacing: 12) {
             if !logo.isEmpty {
                 SubscriptionLogoImage(logo: logo, size: 36)
+            } else if tx.isTransfer {
+                CategoryIconBadge(icon: "arrow.left.arrow.right", color: "#5856D6", size: 36)
             } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
@@ -315,7 +322,7 @@ struct PeriodDetailSheet: View {
             Spacer()
             Text((isIncome ? "+" : "−") + CurrencyFormatter.shared.format(abs(tx.amount)))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isIncome ? Color.green : Color.orange)
+                .foregroundStyle(tx.isTransfer ? Color.indigo : (isIncome ? Color.green : Color.orange))
         }
         .padding(.horizontal, 20).padding(.vertical, 11)
         .background(Color(.systemBackground))
@@ -337,6 +344,9 @@ struct PeriodDetailSheet: View {
                 existingTransactions: allTransactions,
                 context: context
             )
+            if rt.isTransfer {
+                deleteTransferPartner(of: tx)
+            }
         }
         context.delete(tx)
     }
@@ -345,7 +355,35 @@ struct PeriodDetailSheet: View {
         if tx.isPaid, let account = allAccounts.first(where: { $0.id == tx.accountId }) {
             account.currentBalance -= tx.amount
         }
+        if tx.isTransfer, let rid = tx.recurringTransactionId {
+            let cal   = Calendar.current
+            let txDay = cal.startOfDay(for: tx.date)
+            if let partner = allTransactions.first(where: {
+                $0.recurringTransactionId == rid &&
+                $0.id != tx.id &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay)
+            }) {
+                if partner.isPaid, let acc = allAccounts.first(where: { $0.id == partner.accountId }) {
+                    acc.currentBalance -= partner.amount
+                }
+                context.delete(partner)
+            }
+        }
         context.delete(tx)
+    }
+
+    /// Supprime la transaction partenaire d'un transfert (l'autre côté de la même occurrence).
+    private func deleteTransferPartner(of tx: Transaction) {
+        guard let rid = tx.recurringTransactionId else { return }
+        let cal   = Calendar.current
+        let txDay = cal.startOfDay(for: tx.date)
+        if let partner = allTransactions.first(where: {
+            $0.recurringTransactionId == rid &&
+            $0.id != tx.id &&
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay)
+        }) {
+            context.delete(partner)
+        }
     }
 
     private func updateRealTx(_ tx: Transaction, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {

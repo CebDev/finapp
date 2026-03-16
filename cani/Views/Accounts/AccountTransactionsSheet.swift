@@ -17,6 +17,7 @@ private struct AccountEntry: Identifiable {
     let amount:                       Decimal
     let categoryId:                   UUID?
     let label:                        String
+    let logo:                         String
     let isTransfer:                   Bool
     let transferDestinationAccountId: UUID?
     let accountId:                    UUID
@@ -43,9 +44,10 @@ struct AccountTransactionsSheet: View {
     /// Tous les comptes — nécessaire pour reverser les transferts.
     @Query private var allAccounts: [Account]
 
-    @State private var tappedEntry:      AccountEntry? = nil
-    @State private var showingEntryMenu: Bool          = false
-    @State private var editingEntry:     AccountEntry? = nil
+    @State private var tappedEntry:       AccountEntry? = nil
+    @State private var showingEntryMenu:  Bool          = false
+    @State private var editingEntry:      AccountEntry? = nil
+    @State private var showingAddTx:      Bool          = false
 
     private static let amberColor = Color(red: 1.0, green: 0.7, blue: 0.0)
 
@@ -77,14 +79,15 @@ struct AccountTransactionsSheet: View {
         for tx in pastTransactions {
             let cat           = tx.categoryId.flatMap { id in categories.first { $0.id == id } }
             // Résoudre le nom de la récurrence liée (transactions validées depuis PeriodDetailSheet)
-            let recurringName = tx.recurringTransactionId.flatMap { rid in allRecurring.first { $0.id == rid } }?.name
-            let label         = entryLabel(notes: tx.notes, categoryName: cat?.name, isIncome: tx.amount > 0, fallback: recurringName)
+            let rt            = tx.recurringTransactionId.flatMap { rid in allRecurring.first { $0.id == rid } }
+            let label         = entryLabel(notes: tx.notes, categoryName: cat?.name, isIncome: tx.amount > 0, fallback: rt?.name)
             result.append(AccountEntry(
                 id:                           tx.id,
                 date:                         tx.date,
                 amount:                       tx.amount,
                 categoryId:                   tx.categoryId,
                 label:                        label,
+                logo:                         rt?.logo ?? "",
                 isTransfer:                   tx.isTransfer,
                 transferDestinationAccountId: tx.transferDestinationAccountId,
                 accountId:                    tx.accountId
@@ -167,6 +170,14 @@ struct AccountTransactionsSheet: View {
                         Image(systemName: "xmark").fontWeight(.semibold)
                     }
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingAddTx = true } label: {
+                        Image(systemName: "plus").fontWeight(.semibold)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddTx) {
+                AddTransactionView(defaultAccountId: account.id)
             }
             .confirmationDialog(
                 tappedEntry?.label ?? "",
@@ -313,10 +324,13 @@ struct AccountTransactionsSheet: View {
     private func entryRow(_ entry: AccountEntry) -> some View {
         let isIncome = entry.amount > 0
         let cat      = entry.categoryId.flatMap { id in categories.first { $0.id == id } }
+        let logo     = entry.logo
 
         return HStack(spacing: 12) {
             // Icône : badge catégorie si disponible, sinon flèche directionnelle
-            if let cat {
+            if !logo.isEmpty {
+                SubscriptionLogoImage(logo: logo, size: 38)
+            } else if let cat {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 38)
             } else {
                 ZStack {

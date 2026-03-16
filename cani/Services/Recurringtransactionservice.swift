@@ -54,8 +54,9 @@ struct RecurringTransactionService {
         )
 
         for date in dates {
-            let tx = makeTransaction(for: recurring, on: date)
-            context.insert(tx)
+            for tx in makeTransactions(for: recurring, on: date) {
+                context.insert(tx)
+            }
         }
     }
 
@@ -72,12 +73,12 @@ struct RecurringTransactionService {
 
         // Vérifier la limite countOfOccurrences
         if let maxCount = recurring.countOfOccurrences {
-            let totalGenerated = existingTransactions
+            let rawCount = existingTransactions
                 .filter { $0.recurringTransactionId == recurring.id }
                 .count
-            // On compte toutes les transactions générées (payées + futures)
-            // Si on a déjà atteint le max, ne pas en générer une nouvelle
-            if totalGenerated >= maxCount { return }
+            // Pour les transferts, chaque occurrence génère 2 transactions (source + dest)
+            let occurrenceCount = recurring.isTransfer ? rawCount / 2 : rawCount
+            if occurrenceCount >= maxCount { return }
         }
 
         // Trouver la dernière occurrence future non payée
@@ -115,14 +116,16 @@ struct RecurringTransactionService {
 
         // Vérifier countOfOccurrences une dernière fois avec le total actuel
         if let maxCount = recurring.countOfOccurrences {
-            let currentCount = existingTransactions
+            let rawCount = existingTransactions
                 .filter { $0.recurringTransactionId == recurring.id }
                 .count
-            if currentCount >= maxCount { return }
+            let occurrenceCount = recurring.isTransfer ? rawCount / 2 : rawCount
+            if occurrenceCount >= maxCount { return }
         }
 
-        let tx = makeTransaction(for: recurring, on: nextDate)
-        context.insert(tx)
+        for tx in makeTransactions(for: recurring, on: nextDate) {
+            context.insert(tx)
+        }
     }
 
     /// Met à jour toutes les Transaction futures non payées d'un RecurringTransaction.
@@ -163,8 +166,9 @@ struct RecurringTransactionService {
         )
 
         for date in dates {
-            let tx = makeTransaction(for: recurring, on: date)
-            context.insert(tx)
+            for tx in makeTransactions(for: recurring, on: date) {
+                context.insert(tx)
+            }
         }
     }
 
@@ -407,5 +411,40 @@ struct RecurringTransactionService {
             categoryId:             recurring.categoryId,
             isPaid:                 false
         )
+    }
+
+    /// Retourne les Transaction à créer pour une occurrence.
+    /// - Transfert : deux transactions (source débit négatif, destination crédit positif).
+    /// - Autre : une seule transaction avec le montant signé habituel.
+    private static func makeTransactions(
+        for recurring: RecurringTransaction,
+        on date: Date
+    ) -> [Transaction] {
+        guard recurring.isTransfer, let destId = recurring.transferDestinationAccountId else {
+            return [makeTransaction(for: recurring, on: date)]
+        }
+        return [
+            Transaction(
+                accountId:                    recurring.accountId,
+                recurringTransactionId:       recurring.id,
+                name:                         recurring.name,
+                amount:                       -recurring.amount,   // source : argent qui sort
+                date:                         date,
+                categoryId:                   recurring.categoryId,
+                isTransfer:                   true,
+                transferDestinationAccountId: destId,
+                isPaid:                       false
+            ),
+            Transaction(
+                accountId:              destId,
+                recurringTransactionId: recurring.id,
+                name:                   recurring.name,
+                amount:                 recurring.amount,           // destination : argent qui entre
+                date:                   date,
+                categoryId:             recurring.categoryId,
+                isTransfer:             true,
+                isPaid:                 false
+            )
+        ]
     }
 }
