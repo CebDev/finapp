@@ -15,7 +15,6 @@ struct MarkAsPaidSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss)      private var dismiss
     @Query(sort: \Account.sortOrder) private var accounts:        [Account]
-    @Query                           private var overrides:       [TransactionOverride]
     @Query                           private var allTransactions: [Transaction]
 
     @State private var amountString:        String  = ""
@@ -28,16 +27,6 @@ struct MarkAsPaidSheet: View {
 
     private var isIncome:     Bool  { transaction.isIncome }
     private var amountColor:  Color { isIncome ? .green : .orange }
-
-    private var existingOverride: TransactionOverride? {
-        overrides.first {
-            $0.recurringTransactionId == transaction.id &&
-            Calendar.current.isDate(
-                Calendar.current.startOfDay(for: $0.occurrenceDate),
-                inSameDayAs: Calendar.current.startOfDay(for: occurrenceDate)
-            )
-        }
-    }
 
     private var selectedAccount: Account? {
         accounts.first { $0.id == selectedAccountId }
@@ -263,58 +252,46 @@ struct MarkAsPaidSheet: View {
     // MARK: - Save
 
     private func save() {
-        let rawString     = amountString
+        let rawString   = amountString
             .replacingOccurrences(of: ",", with: ".")
             .replacingOccurrences(of: " ", with: "")
-        let parsed        = Decimal(string: rawString) ?? abs(transaction.amount)
+        let parsed      = Decimal(string: rawString) ?? abs(transaction.amount)
         let signedAmount: Decimal = isIncome ? parsed : -parsed
-        let normalizedOcc = Calendar.current.startOfDay(for: occurrenceDate)
+        let cal         = Calendar.current
+        let normalizedOcc = cal.startOfDay(for: occurrenceDate)
         let targetAccountId = selectedAccountId ?? transaction.accountId
 
-        // --- Nettoyage d'une validation précédente ---
-        if let existing = existingOverride, existing.isPaid {
-            // Supprimer la Transaction réelle précédente et annuler son effet sur le solde
-            if let prevTx = allTransactions.first(where: {
-                $0.recurringTransactionId == transaction.id &&
-                Calendar.current.isDate(
-                    Calendar.current.startOfDay(for: $0.date),
-                    inSameDayAs: normalizedOcc
-                )
-            }) {
-                if let prevAccount = accounts.first(where: { $0.id == prevTx.accountId }) {
-                    prevAccount.currentBalance -= prevTx.amount
-                }
-                context.delete(prevTx)
+        // Trouver la Transaction existante pour cette occurrence
+        guard let tx = allTransactions.first(where: {
+            $0.recurringTransactionId == transaction.id &&
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
+        }) else { return }
+
+        // Si déjà payée, annuler l'effet précédent sur le solde avant de corriger
+        if tx.isPaid {
+            if let prevAccount = accounts.first(where: { $0.id == tx.accountId }) {
+                prevAccount.currentBalance -= tx.amount
             }
-            // Supprimer l'ancien skip marker
-            context.delete(existing)
         }
 
-        // --- Créer la Transaction réelle (visible dans AccountTransactionsSheet) ---
-        let realTx = Transaction(
-            accountId:              targetAccountId,
-            recurringTransactionId: transaction.id,
-            name:                   transaction.name,
-            amount:                 signedAmount,
-            date:                   paymentDate,
-            categoryId:             transaction.categoryId,
-            notes:                  notes.isEmpty ? nil : notes,
-            isPaid:                 true
-        )
-        context.insert(realTx)
+        // Mettre à jour la Transaction
+        tx.isPaid     = true
+        tx.amount     = signedAmount
+        tx.date       = paymentDate
+        tx.accountId  = targetAccountId
+        tx.notes      = notes.isEmpty ? nil : notes
 
-        // --- Créer le skip marker pour PeriodEngine/PeriodDetailSheet ---
-        let skipOverride = TransactionOverride(
-            recurringTransactionId: transaction.id,
-            occurrenceDate:         normalizedOcc
-        )
-        skipOverride.isPaid = true
-        context.insert(skipOverride)
-
-        // --- Appliquer le montant au solde du compte cible ---
+        // Appliquer le montant au solde du compte cible
         if let account = accounts.first(where: { $0.id == targetAccountId }) {
             account.currentBalance += signedAmount
         }
+
+        // Générer la prochaine occurrence pour maintenir la fenêtre glissante
+        RecurringTransactionService.generateNextOccurrenceIfNeeded(
+            for: transaction,
+            existingTransactions: allTransactions,
+            context: context
+        )
 
         try? context.save()
         dismiss()
@@ -323,19 +300,18 @@ struct MarkAsPaidSheet: View {
     // MARK: - Prefill
 
     private func prefill() {
-        // Chercher une Transaction réelle déjà validée pour cette occurrence
-        let normalizedOcc = Calendar.current.startOfDay(for: occurrenceDate)
-        if let prevTx = allTransactions.first(where: {
+        let cal           = Calendar.current
+        let normalizedOcc = cal.startOfDay(for: occurrenceDate)
+
+        if let tx = allTransactions.first(where: {
             $0.recurringTransactionId == transaction.id &&
-            Calendar.current.isDate(
-                Calendar.current.startOfDay(for: $0.date),
-                inSameDayAs: normalizedOcc
-            )
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: normalizedOcc)
         }) {
-            amountString      = formatForInput(abs(prevTx.amount))
-            paymentDate       = prevTx.date
-            selectedAccountId = prevTx.accountId
-            notes             = prevTx.notes ?? ""
+            // Pré-remplir depuis la Transaction existante
+            amountString      = formatForInput(abs(tx.isPaid ? tx.amount : transaction.amount))
+            paymentDate       = tx.isPaid ? tx.date : occurrenceDate
+            selectedAccountId = tx.accountId
+            notes             = tx.notes ?? ""
         } else {
             amountString      = formatForInput(abs(transaction.amount))
             paymentDate       = occurrenceDate

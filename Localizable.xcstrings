@@ -32,6 +32,9 @@
         }
       }
     },
+    "^[%lld occurrence](inflect: true)" : {
+
+    },
     "+" : {
 
     },
@@ -1192,9 +1195,6 @@
     "Configurez votre rythme de période" : {
 
     },
-    "Confirmée" : {
-
-    },
     "Confirmer la suppression" : {
 
     },
@@ -1657,6 +1657,12 @@
     "Passifs" : {
 
     },
+    "Payée" : {
+
+    },
+    "Payer" : {
+
+    },
     "Période" : {
 
     },
@@ -1739,9 +1745,6 @@
 
     },
     "Samedi" : {
-
-    },
-    "Sans date de fin" : {
 
     },
     "Santé" : {
@@ -1916,6 +1919,9 @@
     "Supprimer" : {
 
     },
+    "Supprimer cette occurrence" : {
+
+    },
     "Supprimer l'abonnement" : {
 
     },
@@ -2032,9 +2038,6 @@
 
     },
     "v%@" : {
-
-    },
-    "Valider le paiement" : {
 
     },
     "Vendredi" : {

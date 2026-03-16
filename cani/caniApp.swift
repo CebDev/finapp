@@ -15,7 +15,6 @@ struct caniApp: App {
             SimulationTransaction.self,
             Category.self,
             UserSettings.self,
-            TransactionOverride.self
             // Subscription.self supprimé — les abonnements sont des RecurringTransaction
             // avec isSubscription == true. Décision acté dans decisions.md.
         ])

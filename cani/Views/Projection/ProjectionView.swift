@@ -10,13 +10,8 @@ import SwiftData
 
 struct ProjectionView: View {
     @Query(sort: \Account.sortOrder)         private var accounts:         [Account]
-    @Query(sort: \RecurringTransaction.name) private var recurring:        [RecurringTransaction]
     @Query                                   private var settingsArray:    [UserSettings]
-    @Query                                   private var allOverrides:     [TransactionOverride]
-    @Query(
-        filter: #Predicate<Transaction> { $0.isPaid },
-        sort:   \Transaction.date
-    )                                        private var allTransactions:  [Transaction]
+    @Query                                   private var allTransactions:  [Transaction]
 
     @State private var showTightOnly:             Bool       = false
     @State private var selectedPeriod:            PayPeriod? = nil
@@ -36,10 +31,8 @@ struct ProjectionView: View {
         return PeriodEngine.generate(
             settings:          s,
             accounts:          accounts,
-            recurring:         recurring,
-            count:             13,
-            overrides:         allOverrides,
             transactions:      allTransactions,
+            count:             13,
             dailySamplingStep: 2
         )
     }
@@ -98,7 +91,6 @@ struct ProjectionView: View {
             .sheet(item: $selectedPeriod) { period in
                 PeriodDetailSheet(
                     period:              period,
-                    allPeriods:          allPeriods,
                     carryForwardBalance: settings?.carryForwardBalance ?? true,
                     tightThreshold:      settings?.tightThreshold ?? 500
                 )

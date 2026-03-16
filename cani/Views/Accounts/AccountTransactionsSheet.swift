@@ -34,11 +34,10 @@ struct AccountTransactionsSheet: View {
     /// Transactions manuelles passées et confirmées sur ce compte (3 derniers mois).
     @Query private var pastTransactions: [Transaction]
 
-    /// Toutes les occurrences marquées payées — filtrage par compte en mémoire.
-    @Query(filter: #Predicate<TransactionOverride> { $0.isPaid == true })
-    private var paidOverrides: [TransactionOverride]
+    /// Toutes les transactions — nécessaire pour generateNextOccurrenceIfNeeded.
+    @Query private var allTransactions:  [Transaction]
 
-    /// Récurrences pour résoudre noms et catégories des overrides payés.
+    /// Récurrences pour résoudre le nom des transactions liées.
     @Query private var allRecurring: [RecurringTransaction]
 
     /// Tous les comptes — nécessaire pour reverser les transferts.
@@ -379,11 +378,14 @@ struct AccountTransactionsSheet: View {
             // Transaction simple ou occurrence validée
             account.currentBalance -= entry.amount
             if let tx = pastTransactions.first(where: { $0.id == entry.id }) {
-                // Si liée à une récurrence, supprimer le marqueur de saut (TransactionOverride)
-                // pour que l'occurrence redevienne "planifiée" dans PeriodDetailSheet.
+                // Si liée à une récurrence, régénérer l'occurrence future
                 if let recurId = tx.recurringTransactionId,
-                   let skipOverride = paidOverrides.first(where: { $0.recurringTransactionId == recurId && $0.isPaid }) {
-                    context.delete(skipOverride)
+                   let rt = allRecurring.first(where: { $0.id == recurId }) {
+                    RecurringTransactionService.generateNextOccurrenceIfNeeded(
+                        for: rt,
+                        existingTransactions: Array(allTransactions),
+                        context: context
+                    )
                 }
                 context.delete(tx)
             }

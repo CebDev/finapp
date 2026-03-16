@@ -12,7 +12,6 @@ struct UpcomingOperationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Icône : checkmark vert si payé, logo abonnement si disponible, sinon catégorie
             if operation.isPaid {
                 ZStack {
                     Circle()
@@ -22,9 +21,8 @@ struct UpcomingOperationRow: View {
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(Color.green)
                 }
-            } else if operation.recurringTransaction.isSubscription,
-                      !operation.recurringTransaction.logo.isEmpty {
-                SubscriptionLogoImage(logo: operation.recurringTransaction.logo, size: 36)
+            } else if let logo = operation.logo, !logo.isEmpty {
+                SubscriptionLogoImage(logo: logo, size: 36)
             } else if let cat = operation.category {
                 CategoryIconBadge(icon: cat.icon, color: cat.color, size: 36)
             } else {
@@ -38,7 +36,6 @@ struct UpcomingOperationRow: View {
                 }
             }
 
-            // Nom + date relative
             VStack(alignment: .leading, spacing: 2) {
                 Text(operation.name)
                     .font(operation.isPaid ? .system(size: 15).italic() : .system(size: 15))
@@ -58,14 +55,13 @@ struct UpcomingOperationRow: View {
 
             Spacer()
 
-            // Montant
             Text(amountLabel)
                 .font(operation.isPaid
                       ? .subheadline.weight(.semibold).italic()
                       : .subheadline.weight(.semibold))
                 .foregroundStyle(operation.isPaid
                                  ? Color.secondary
-                                 : (operation.recurringTransaction.isIncome ? Color.green : Color.orange))
+                                 : (operation.isIncome ? Color.green : Color.orange))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
@@ -75,7 +71,7 @@ struct UpcomingOperationRow: View {
     // MARK: - Helpers
 
     private var amountLabel: String {
-        let prefix = operation.recurringTransaction.isIncome ? "+" : "−"
+        let prefix = operation.isIncome ? "+" : "−"
         return prefix + CurrencyFormatter.shared.format(Swift.abs(operation.amount))
     }
 
@@ -96,7 +92,6 @@ struct UpcomingOperationRow: View {
             let f = DateFormatter()
             f.locale     = Locale(identifier: "fr_CA")
             f.dateFormat = "EEE"
-            // "mar." → capitalize first letter only
             let raw = f.string(from: date)
             return raw.prefix(1).uppercased() + raw.dropFirst() + "."
         default:

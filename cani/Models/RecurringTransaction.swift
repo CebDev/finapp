@@ -1,3 +1,10 @@
+//
+//  RecurringTransaction.swift
+//  cani
+//
+//  Created by Sébastien Vermandele on 2026-03-12.
+//
+
 import Foundation
 import SwiftData
 
@@ -9,7 +16,12 @@ class RecurringTransaction {
     var amount: Decimal = Decimal(0)
     var frequency: Frequency = Frequency.monthly
     var startDate: Date = Date()
+    /// Date de fin — mutuellement exclusif avec countOfOccurrences.
+    /// nil = pas de date de fin.
     var endDate: Date? = nil
+    /// Nombre maximum d'occurrences — mutuellement exclusif avec endDate.
+    /// nil = pas de limite par nombre.
+    var countOfOccurrences: Int? = nil
     var dayOfWeek: Int? = nil
     var dayOfMonth: Int? = nil
     var isIncome: Bool = false
@@ -24,7 +36,7 @@ class RecurringTransaction {
     var isTransfer: Bool = false
     /// UUID du compte de destination pour un transfert (nil si non-transfert)
     var transferDestinationAccountId: UUID? = nil
- 
+
     init(
         id: UUID = UUID(),
         accountId: UUID,
@@ -33,6 +45,7 @@ class RecurringTransaction {
         frequency: Frequency,
         startDate: Date,
         endDate: Date? = nil,
+        countOfOccurrences: Int? = nil,
         dayOfWeek: Int? = nil,
         dayOfMonth: Int? = nil,
         isIncome: Bool = false,
@@ -51,6 +64,7 @@ class RecurringTransaction {
         self.frequency = frequency
         self.startDate = startDate
         self.endDate = endDate
+        self.countOfOccurrences = countOfOccurrences
         self.dayOfWeek = dayOfWeek
         self.dayOfMonth = dayOfMonth
         self.isIncome = isIncome

@@ -39,6 +39,14 @@ private enum TransactionType: Int, CaseIterable {
     }
 }
 
+// MARK: - EndMode
+
+private enum EndMode: String, CaseIterable {
+    case never      = "Sans fin"
+    case onDate     = "Date de fin"
+    case afterCount = "Nombre d'occurrences"
+}
+
 // MARK: - AddTransactionView
 
 struct AddTransactionView: View {
@@ -47,21 +55,20 @@ struct AddTransactionView: View {
 
     /// Non-nil → mode édition d'une RecurringTransaction existante.
     var editingRecurring: RecurringTransaction? = nil
-    /// Non-nil → mode édition d'une occurrence unique (sans modifier la règle récurrente).
+    /// Non-nil → mode édition d'une occurrence unique.
     var editingOccurrenceRecurring: RecurringTransaction? = nil
-    /// Date de l'occurrence à modifier (utilisée avec editingOccurrenceRecurring).
+    /// Date de l'occurrence à modifier.
     var editingOccurrenceDate: Date? = nil
-    /// true → le toggle "Transaction récurrente" est pré-coché à l'ouverture.
+    /// true → le toggle "Transaction récurrente" est pré-coché.
     var defaultRecurring: Bool = false
-    /// true → le toggle "Abonnement" est pré-coché (implique isRecurring = true).
+    /// true → le toggle "Abonnement" est pré-coché.
     var defaultSubscription: Bool = false
 
-    @Query(sort: \Account.name)       private var accounts:       [Account]
-    @Query(sort: \Category.sortOrder) private var allCategories: [Category]
-    @Query                            private var allOverrides:   [TransactionOverride]
-    @Query                            private var allTransactions: [Transaction]
+    @Query(sort: \Account.name)       private var accounts:        [Account]
+    @Query(sort: \Category.sortOrder) private var allCategories:   [Category]
+    @Query                            private var allTransactions:  [Transaction]
 
-    // MARK: État du formulaire
+    // MARK: - État formulaire
     @State private var transactionType:              TransactionType = .expense
     @State private var name:                         String          = ""
     @State private var amountText:                   String          = ""
@@ -71,19 +78,20 @@ struct AddTransactionView: View {
     @State private var date:                         Date            = Date()
     @State private var isRecurring:                  Bool            = false
 
-    // MARK: État récurrence
-    @State private var frequency:      Frequency = .monthly
-    @State private var dayOfWeek:      Int       = 1   // 1 = Lundi
-    @State private var dayOfMonth:     Int       = 1
-    @State private var noEndDate:      Bool      = true
-    @State private var endDate:        Date      = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
-    @State private var isSubscription: Bool      = false
-    @State private var selectedLogo:   String    = ""
-
-    private var isEditing: Bool { editingRecurring != nil }
-    private var isEditingOccurrence: Bool { editingOccurrenceRecurring != nil }
+    // MARK: - État récurrence
+    @State private var frequency:          Frequency = .monthly
+    @State private var dayOfWeek:          Int       = 1
+    @State private var dayOfMonth:         Int       = 1
+    @State private var endMode:            EndMode   = .never
+    @State private var endDate:            Date      = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+    @State private var countOfOccurrences: Int       = 4
+    @State private var isSubscription:     Bool      = false
+    @State private var selectedLogo:       String    = ""
 
     @State private var showingDeleteConfirm = false
+
+    private var isEditing:           Bool { editingRecurring != nil }
+    private var isEditingOccurrence: Bool { editingOccurrenceRecurring != nil }
 
     private var selectedCategory: Category? {
         guard let id = selectedCategoryId else { return nil }
@@ -163,7 +171,6 @@ struct AddTransactionView: View {
             .pickerStyle(.segmented)
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .onChange(of: transactionType) { _, _ in
-                // Réinitialiser le compte destination si on quitte le mode transfert
                 if transactionType != .transfer {
                     selectedDestinationAccountId = nil
                 }
@@ -295,10 +302,13 @@ struct AddTransactionView: View {
                     }
                 }
 
-                Toggle("Sans date de fin", isOn: $noEndDate)
-                    .tint(.indigo)
+                Picker("Fin", selection: $endMode) {
+                    ForEach(EndMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
 
-                if !noEndDate {
+                if endMode == .onDate {
                     DatePicker(
                         "Date de fin",
                         selection: $endDate,
@@ -306,6 +316,10 @@ struct AddTransactionView: View {
                         displayedComponents: .date
                     )
                     .environment(\.locale, Locale(identifier: "fr_CA"))
+                }
+
+                if endMode == .afterCount {
+                    Stepper("^[\(countOfOccurrences) occurrence](inflect: true)", value: $countOfOccurrences, in: 1...999)
                 }
             }
         }
@@ -330,7 +344,6 @@ struct AddTransactionView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    // Option "Aucune"
                     Button {
                         selectedLogo = ""
                     } label: {
@@ -388,7 +401,6 @@ struct AddTransactionView: View {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
               let amount = parsedAmount, amount > 0,
               selectedAccountId != nil else { return false }
-
         if transactionType == .transfer {
             return selectedDestinationAccountId != nil
                 && selectedDestinationAccountId != selectedAccountId
@@ -398,6 +410,14 @@ struct AddTransactionView: View {
 
     private var minEndDate: Date {
         Calendar.current.date(byAdding: .day, value: 1, to: date) ?? date
+    }
+
+    private var resolvedEndDate: Date? {
+        endMode == .onDate ? endDate : nil
+    }
+
+    private var resolvedCountOfOccurrences: Int? {
+        endMode == .afterCount ? countOfOccurrences : nil
     }
 
     private let weekdayOptions: [(label: String, value: Int)] = [
@@ -419,48 +439,39 @@ struct AddTransactionView: View {
     private var deleteConfirmMessage: String {
         isEditing
             ? "Toutes les occurrences planifiées de \"\(editingRecurring?.name ?? "")\" seront supprimées."
-            : "Uniquement cette occurrence sera supprimée. Les occurrences futures resteront planifiées."
+            : "Uniquement cette occurrence sera supprimée. Les occurrences suivantes ne sont pas affectées."
     }
 
-    /// Supprime la RecurringTransaction et tous ses overrides associés.
     private func deleteAll() {
         guard let recurring = editingRecurring else { return }
-
-        // Supprimer les overrides liés
-        let linked = allOverrides.filter { $0.recurringTransactionId == recurring.id }
-        linked.forEach { context.delete($0) }
-
-        // Supprimer les transactions réelles liées
-        let linkedTx = allTransactions.filter { $0.recurringTransactionId == recurring.id }
-        linkedTx.forEach { context.delete($0) }
-
+        RecurringTransactionService.deleteFutureOccurrences(
+            for: recurring.id,
+            existingTransactions: allTransactions,
+            context: context
+        )
         context.delete(recurring)
         try? context.save()
         dismiss()
     }
 
-    /// Crée un override `isSkipped = true` pour masquer uniquement cette occurrence.
     private func deleteOccurrence() {
-        guard let recurring = editingOccurrenceRecurring,
-              let occDate   = editingOccurrenceDate else { return }
+        guard let occDate   = editingOccurrenceDate,
+              let recurring = editingOccurrenceRecurring else { return }
 
-        let cal            = Calendar.current
-        let normalizedDate = cal.startOfDay(for: occDate)
+        let cal  = Calendar.current
+        let norm = cal.startOfDay(for: occDate)
 
-        // Réutiliser l'override existant s'il y en a un, sinon en créer un
-        let existing = allOverrides.first {
+        if let tx = allTransactions.first(where: {
             $0.recurringTransactionId == recurring.id &&
-            cal.isDate(cal.startOfDay(for: $0.occurrenceDate), inSameDayAs: normalizedDate)
-        }
-        if let ov = existing {
-            ov.isSkipped = true
-        } else {
-            let ov = TransactionOverride(
-                recurringTransactionId: recurring.id,
-                occurrenceDate:         normalizedDate
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: norm)
+        }) {
+            context.delete(tx)
+            // Maintenir la fenêtre glissante
+            RecurringTransactionService.generateNextOccurrenceIfNeeded(
+                for: recurring,
+                existingTransactions: allTransactions,
+                context: context
             )
-            ov.isSkipped = true
-            context.insert(ov)
         }
 
         try? context.save()
@@ -475,7 +486,7 @@ struct AddTransactionView: View {
         if transactionType == .transfer {
             saveTransfer(rawAmount: rawAmount, sourceAccountId: accountId)
         } else {
-            let isIncome    = transactionType == .income
+            let isIncome     = transactionType == .income
             let signedAmount = isIncome ? rawAmount : -rawAmount
             saveRegular(signedAmount: signedAmount, isIncome: isIncome, accountId: accountId)
         }
@@ -484,110 +495,108 @@ struct AddTransactionView: View {
     }
 
     private func saveRegular(signedAmount: Decimal, isIncome: Bool, accountId: UUID) {
-        if isEditing, let existing = editingRecurring {
-            existing.name           = name.trimmingCharacters(in: .whitespaces)
-            existing.amount         = signedAmount
-            existing.isIncome       = isIncome
-            existing.frequency      = frequency
-            existing.startDate      = date
-            existing.endDate        = noEndDate ? nil : endDate
-            existing.dayOfWeek      = frequency == .biweekly ? dayOfWeek : nil
-            existing.dayOfMonth     = frequency == .monthly  ? dayOfMonth : nil
-            existing.categoryId     = selectedCategoryId
-            existing.isSubscription = isSubscription
-            existing.logo           = selectedLogo
-            existing.accountId      = accountId
-            existing.isTransfer     = false
-            existing.transferDestinationAccountId = nil
 
-        } else if isEditingOccurrence, let recurring = editingOccurrenceRecurring {
+        // MARK: Mode édition récurrence complète
+        if isEditing, let existing = editingRecurring {
+            existing.name               = name.trimmingCharacters(in: .whitespaces)
+            existing.amount             = signedAmount
+            existing.isIncome           = isIncome
+            existing.frequency          = frequency
+            existing.startDate          = date
+            existing.endDate            = resolvedEndDate
+            existing.countOfOccurrences = resolvedCountOfOccurrences
+            existing.dayOfWeek          = frequency == .biweekly ? dayOfWeek : nil
+            existing.dayOfMonth         = frequency == .monthly  ? dayOfMonth : nil
+            existing.categoryId         = selectedCategoryId
+            existing.isSubscription     = isSubscription
+            existing.logo               = selectedLogo
+            existing.accountId          = accountId
+            existing.isTransfer         = false
+            existing.transferDestinationAccountId = nil
+            // Mettre à jour toutes les occurrences futures non payées
+            RecurringTransactionService.updateFutureOccurrences(
+                for: existing,
+                from: Date(),
+                existingTransactions: allTransactions,
+                context: context
+            )
+
+        // MARK: Mode édition occurrence unique
+        } else if isEditingOccurrence,
+                  let recurring = editingOccurrenceRecurring,
+                  let occDate   = editingOccurrenceDate {
+            let cal  = Calendar.current
+            let norm = cal.startOfDay(for: occDate)
+            if let tx = allTransactions.first(where: {
+                $0.recurringTransactionId == recurring.id &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: norm)
+            }) {
+                tx.name         = name.trimmingCharacters(in: .whitespaces)
+                tx.amount       = signedAmount
+                tx.date         = date
+                tx.categoryId   = selectedCategoryId
+                tx.isCustomized = true
+            }
+
+        // MARK: Nouvelle récurrence
+        } else if isRecurring {
+            let recurring = RecurringTransaction(
+                accountId:          accountId,
+                name:               name.trimmingCharacters(in: .whitespaces),
+                amount:             signedAmount,
+                frequency:          frequency,
+                startDate:          date,
+                endDate:            resolvedEndDate,
+                countOfOccurrences: resolvedCountOfOccurrences,
+                dayOfWeek:          frequency == .biweekly ? dayOfWeek : nil,
+                dayOfMonth:         frequency == .monthly  ? dayOfMonth : nil,
+                isIncome:           isIncome,
+                categoryId:         selectedCategoryId,
+                isSubscription:     isSubscription,
+                logo:               selectedLogo
+            )
+            context.insert(recurring)
+            // Générer toutes les occurrences sur 12 mois
+            RecurringTransactionService.generateOccurrences(for: recurring, context: context)
+            // Si la date de départ est passée, marquer la première comme payée et ajuster le solde
+            if date <= Date() {
+                let firstTx = allTransactions
+                    .filter { $0.recurringTransactionId == recurring.id }
+                    .sorted { $0.date < $1.date }
+                    .first
+                firstTx?.isPaid = true
+                applyBalance(accountId: accountId, signedAmount: signedAmount)
+            }
+
+        // MARK: Transaction manuelle
+        } else {
             let isPaid = date <= Date()
             let tx = Transaction(
-                accountId:              accountId,
-                recurringTransactionId: recurring.id,
-                name:                   name.trimmingCharacters(in: .whitespaces),
-                amount:                 signedAmount,
-                date:                   date,
-                categoryId:             selectedCategoryId,
-                isPaid:                 isPaid,
+                accountId:  accountId,
+                name:       name.trimmingCharacters(in: .whitespaces),
+                amount:     signedAmount,
+                date:       date,
+                categoryId: selectedCategoryId,
+                isPaid:     isPaid
             )
             context.insert(tx)
             if isPaid { applyBalance(accountId: accountId, signedAmount: signedAmount) }
-
-        } else if isRecurring {
-            let recurring = RecurringTransaction(
-                accountId:      accountId,
-                name:           name.trimmingCharacters(in: .whitespaces),
-                amount:         signedAmount,
-                frequency:      frequency,
-                startDate:      date,
-                endDate:        noEndDate ? nil : endDate,
-                dayOfWeek:      frequency == .biweekly ? dayOfWeek : nil,
-                dayOfMonth:     frequency == .monthly  ? dayOfMonth : nil,
-                isIncome:       isIncome,
-                categoryId:     selectedCategoryId,
-                isSubscription: isSubscription,
-                logo:           selectedLogo
-            )
-            context.insert(recurring)
-
-            if date <= Date() {
-                let tx = Transaction(
-                    accountId:              accountId,
-                    recurringTransactionId: recurring.id,
-                    name:                   name.trimmingCharacters(in: .whitespaces),
-                    amount:                 signedAmount,
-                    date:                   date,
-                    categoryId:             selectedCategoryId,
-                    isPaid:                 true
-                )
-                context.insert(tx)
-                applyBalance(accountId: accountId, signedAmount: signedAmount)
-            }
-
-        } else {
-            let isPaid = date <= Date()
-            if isPaid {
-                let tx = Transaction(
-                    accountId:   accountId,
-                    name:        name.trimmingCharacters(in: .whitespaces),
-                    amount:      signedAmount,
-                    date:        date,
-                    categoryId:  selectedCategoryId,
-                    isPaid:      true
-                )
-                context.insert(tx)
-                applyBalance(accountId: accountId, signedAmount: signedAmount)
-            } else {
-                // Transaction ponctuelle future → RecurringTransaction .oneTime
-                let recurring = RecurringTransaction(
-                    accountId:      accountId,
-                    name:           name.trimmingCharacters(in: .whitespaces),
-                    amount:         signedAmount,
-                    frequency:      .oneTime,
-                    startDate:      date,
-                    endDate:        nil,
-                    isIncome:       isIncome,
-                    categoryId:     selectedCategoryId,
-                    isSubscription: false
-                )
-                context.insert(recurring)
-            }
         }
     }
 
     private func saveTransfer(rawAmount: Decimal, sourceAccountId: UUID) {
         guard let destAccountId = selectedDestinationAccountId else { return }
-        // Convention : amount stocké = montant positif (direction implicite par isTransfer + accountId/transferDestinationAccountId)
         let transferAmount = rawAmount
 
+        // MARK: Mode édition récurrence complète
         if isEditing, let existing = editingRecurring {
             existing.name                         = name.trimmingCharacters(in: .whitespaces)
             existing.amount                       = transferAmount
             existing.isIncome                     = false
             existing.frequency                    = frequency
             existing.startDate                    = date
-            existing.endDate                      = noEndDate ? nil : endDate
+            existing.endDate                      = resolvedEndDate
+            existing.countOfOccurrences           = resolvedCountOfOccurrences
             existing.dayOfWeek                    = frequency == .biweekly ? dayOfWeek : nil
             existing.dayOfMonth                   = frequency == .monthly  ? dayOfMonth : nil
             existing.categoryId                   = selectedCategoryId
@@ -595,12 +604,65 @@ struct AddTransactionView: View {
             existing.accountId                    = sourceAccountId
             existing.isTransfer                   = true
             existing.transferDestinationAccountId = destAccountId
+            RecurringTransactionService.updateFutureOccurrences(
+                for: existing,
+                from: Date(),
+                existingTransactions: allTransactions,
+                context: context
+            )
 
-        } else if isEditingOccurrence, let recurring = editingOccurrenceRecurring {
+        // MARK: Mode édition occurrence unique
+        } else if isEditingOccurrence,
+                  let recurring = editingOccurrenceRecurring,
+                  let occDate   = editingOccurrenceDate {
+            let cal  = Calendar.current
+            let norm = cal.startOfDay(for: occDate)
+            if let tx = allTransactions.first(where: {
+                $0.recurringTransactionId == recurring.id &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: norm)
+            }) {
+                tx.name         = name.trimmingCharacters(in: .whitespaces)
+                tx.amount       = transferAmount
+                tx.date         = date
+                tx.categoryId   = selectedCategoryId
+                tx.isCustomized = true
+            }
+
+        // MARK: Nouvelle récurrence transfert
+        } else if isRecurring {
+            let recurring = RecurringTransaction(
+                accountId:                    sourceAccountId,
+                name:                         name.trimmingCharacters(in: .whitespaces),
+                amount:                       transferAmount,
+                frequency:                    frequency,
+                startDate:                    date,
+                endDate:                      resolvedEndDate,
+                countOfOccurrences:           resolvedCountOfOccurrences,
+                dayOfWeek:                    frequency == .biweekly ? dayOfWeek : nil,
+                dayOfMonth:                   frequency == .monthly  ? dayOfMonth : nil,
+                isIncome:                     false,
+                categoryId:                   selectedCategoryId,
+                isSubscription:               false,
+                isTransfer:                   true,
+                transferDestinationAccountId: destAccountId
+            )
+            context.insert(recurring)
+            RecurringTransactionService.generateOccurrences(for: recurring, context: context)
+            if date <= Date() {
+                let firstTx = allTransactions
+                    .filter { $0.recurringTransactionId == recurring.id }
+                    .sorted { $0.date < $1.date }
+                    .first
+                firstTx?.isPaid = true
+                applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
+                applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
+            }
+
+        // MARK: Transfert manuel
+        } else {
             let isPaid = date <= Date()
             let tx = Transaction(
                 accountId:                    sourceAccountId,
-                recurringTransactionId:       recurring.id,
                 name:                         name.trimmingCharacters(in: .whitespaces),
                 amount:                       transferAmount,
                 date:                         date,
@@ -614,94 +676,24 @@ struct AddTransactionView: View {
                 applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
                 applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
             }
-
-        } else if isRecurring {
-            let recurring = RecurringTransaction(
-                accountId:                    sourceAccountId,
-                name:                         name.trimmingCharacters(in: .whitespaces),
-                amount:                       transferAmount,
-                frequency:                    frequency,
-                startDate:                    date,
-                endDate:                      noEndDate ? nil : endDate,
-                dayOfWeek:                    frequency == .biweekly ? dayOfWeek : nil,
-                dayOfMonth:                   frequency == .monthly  ? dayOfMonth : nil,
-                isIncome:                     false,
-                categoryId:                   selectedCategoryId,
-                isSubscription:               false,
-                isTransfer:                   true,
-                transferDestinationAccountId: destAccountId
-            )
-            context.insert(recurring)
-
-            if date <= Date() {
-                let tx = Transaction(
-                    accountId:                    sourceAccountId,
-                    recurringTransactionId:       recurring.id,
-                    name:                         name.trimmingCharacters(in: .whitespaces),
-                    amount:                       transferAmount,
-                    date:                         date,
-                    categoryId:                   selectedCategoryId,
-                    isTransfer:                   true,
-                    transferDestinationAccountId: destAccountId,
-                    isPaid:                       true
-                )
-                context.insert(tx)
-                applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
-                applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
-            }
-
-        } else {
-            let isPaid = date <= Date()
-            if isPaid {
-                let tx = Transaction(
-                    accountId:                    sourceAccountId,
-                    name:                         name.trimmingCharacters(in: .whitespaces),
-                    amount:                       transferAmount,
-                    date:                         date,
-                    categoryId:                   selectedCategoryId,
-                    isTransfer:                   true,
-                    transferDestinationAccountId: destAccountId,
-                    isPaid:                       true
-                )
-                context.insert(tx)
-                applyBalance(accountId: sourceAccountId, signedAmount: -transferAmount)
-                applyBalance(accountId: destAccountId,   signedAmount:  transferAmount)
-            } else {
-                // Transfert ponctuel futur → RecurringTransaction .oneTime
-                let recurring = RecurringTransaction(
-                    accountId:                    sourceAccountId,
-                    name:                         name.trimmingCharacters(in: .whitespaces),
-                    amount:                       transferAmount,
-                    frequency:                    .oneTime,
-                    startDate:                    date,
-                    endDate:                      nil,
-                    isIncome:                     false,
-                    categoryId:                   selectedCategoryId,
-                    isSubscription:               false,
-                    isTransfer:                   true,
-                    transferDestinationAccountId: destAccountId
-                )
-                context.insert(recurring)
-            }
         }
     }
 
-    /// Applique `signedAmount` au solde courant du compte identifié par `accountId`.
     private func applyBalance(accountId: UUID, signedAmount: Decimal) {
         if let account = accounts.first(where: { $0.id == accountId }) {
             account.currentBalance += signedAmount
         }
     }
 
-    // MARK: - Pré-remplissage (mode édition)
+    // MARK: - Pré-remplissage
 
     private func prefillIfEditing() {
         if let tx = editingRecurring {
             if tx.isTransfer {
-                transactionType                  = .transfer
-                selectedDestinationAccountId     = tx.transferDestinationAccountId
+                transactionType              = .transfer
+                selectedDestinationAccountId = tx.transferDestinationAccountId
             } else {
-                transactionType                  = tx.isIncome ? .income : .expense
+                transactionType = tx.isIncome ? .income : .expense
             }
             name               = tx.name
             amountText         = "\(abs(tx.amount))"
@@ -714,8 +706,16 @@ struct AddTransactionView: View {
             dayOfMonth         = tx.dayOfMonth ?? 1
             isSubscription     = tx.isSubscription
             selectedLogo       = tx.logo
-            noEndDate          = tx.endDate == nil
-            if let end = tx.endDate { endDate = end }
+            // Pré-remplir le mode de fin
+            if let count = tx.countOfOccurrences {
+                endMode            = .afterCount
+                countOfOccurrences = count
+            } else if let end = tx.endDate {
+                endMode  = .onDate
+                endDate  = end
+            } else {
+                endMode = .never
+            }
 
         } else if let recurring = editingOccurrenceRecurring {
             if recurring.isTransfer {
@@ -732,7 +732,6 @@ struct AddTransactionView: View {
             isRecurring        = false
 
         } else {
-            // Auto-sélectionner le seul compte s'il n'y en a qu'un
             if accounts.count == 1 { selectedAccountId = accounts[0].id }
             if defaultRecurring || defaultSubscription { isRecurring = true }
             if defaultSubscription { isSubscription = true }
@@ -757,7 +756,6 @@ private struct CategoryPickerView: View {
 
     var body: some View {
         List {
-            // Option "Aucune"
             Button {
                 selectedId = nil
                 dismiss()
@@ -772,7 +770,6 @@ private struct CategoryPickerView: View {
                 }
             }
 
-            // Catégories racines + sous-catégories
             ForEach(roots) { root in
                 let kids = children(of: root)
                 if kids.isEmpty {

@@ -261,7 +261,6 @@ struct ProfileView: View {
         deleteAll(Account.self)
         deleteAll(RecurringTransaction.self)
         deleteAll(Transaction.self)
-        deleteAll(TransactionOverride.self)
         deleteAll(Goal.self)
         deleteAll(Simulation.self)
         deleteAll(SimulationTransaction.self)

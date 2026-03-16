@@ -9,16 +9,16 @@ import SwiftUI
 import SwiftData
 
 struct HomeView: View {
-    @Query(sort: \Account.sortOrder)         private var accounts:      [Account]
-    @Query(sort: \RecurringTransaction.name) private var recurring:     [RecurringTransaction]
-    @Query(sort: \Category.sortOrder)        private var allCategories: [Category]
-    @Query                                   private var settingsArray: [UserSettings]
-    @Query                                   private var allOverrides:  [TransactionOverride]
+    @Query(sort: \Account.sortOrder)         private var accounts:            [Account]
+    @Query(sort: \RecurringTransaction.name) private var allRecurring:        [RecurringTransaction]
+    @Query(sort: \Category.sortOrder)        private var allCategories:       [Category]
+    @Query                                   private var settingsArray:       [UserSettings]
     @Query(
         filter: #Predicate<Transaction> { $0.isPaid },
         sort:   \Transaction.date,
         order:  .reverse
     )                                        private var allPastTransactions: [Transaction]
+    @Query                                   private var allTransactions:     [Transaction]
 
     @AppStorage("selectedTab") private var selectedTab: Int = 0
 
@@ -30,10 +30,10 @@ struct HomeView: View {
     @State private var showingOpMenu        = false
     @State private var menuTargetOp:        UpcomingOperation? = nil
     @State private var editingRecurring:    RecurringTransaction? = nil
-    @State private var editingOccurrence:   RecurringTransaction? = nil
-    @State private var editingOccDate:      Date = Date()
-    @State private var markingAsPaid:       RecurringTransaction? = nil
-    @State private var markingAsPaidDate:   Date = Date()
+    @State private var editingOccurrenceTx: Transaction?          = nil
+    @State private var editingOccDate:      Date                  = Date()
+    @State private var markingAsPaidTx:     Transaction?          = nil
+    @State private var markingAsPaidDate:   Date                  = Date()
     @State private var selectedAccount:     Account? = nil
 
     // MARK: - Computed
@@ -53,10 +53,8 @@ struct HomeView: View {
         return PeriodEngine.generate(
             settings:     s,
             accounts:     accounts,
-            recurring:    recurring,
-            count:        5,
-            overrides:    allOverrides,
-            transactions: allPastTransactions
+            transactions: allTransactions,
+            count:        5
         )
     }
 
@@ -68,13 +66,11 @@ struct HomeView: View {
         let currentStart  = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
         let dayBefore     = Calendar.current.date(byAdding: .day, value: -1, to: currentStart) ?? currentStart
         return PeriodEngine.generate(
-            settings:          s,
-            accounts:          accounts,
-            recurring:         recurring,
-            count:             5,          // 1 avant + courante + 3 après
-            referenceDate:     dayBefore,
-            overrides:         allOverrides,
-            transactions:      allPastTransactions
+            settings:      s,
+            accounts:      accounts,
+            transactions:  allTransactions,
+            count:         5,
+            referenceDate: dayBefore
         )
     }
 
@@ -173,7 +169,6 @@ struct HomeView: View {
             .sheet(item: $selectedPeriod) { period in
                 PeriodDetailSheet(
                     period:              period,
-                    allPeriods:          allPeriods,
                     carryForwardBalance: settings?.carryForwardBalance ?? true,
                     tightThreshold:      settings?.tightThreshold ?? 500
                 )
@@ -184,13 +179,15 @@ struct HomeView: View {
                 titleVisibility: .visible
             ) {
                 Button("Modifier toutes les occurrences à venir") {
-                    editingRecurring = menuTargetOp?.recurringTransaction
-                    menuTargetOp     = nil
+                    if let op = menuTargetOp {
+                        editingRecurring = recurringFor(op)
+                    }
+                    menuTargetOp = nil
                 }
                 Button("Modifier uniquement cette occurrence") {
                     if let op = menuTargetOp {
-                        editingOccDate   = op.date
-                        editingOccurrence = op.recurringTransaction
+                        editingOccDate    = op.date
+                        editingOccurrenceTx = op.transaction
                     }
                     menuTargetOp = nil
                 }
@@ -198,7 +195,7 @@ struct HomeView: View {
                 Button("Marquer comme payé") {
                     if let op = menuTargetOp {
                         markingAsPaidDate = op.date
-                        markingAsPaid     = op.recurringTransaction
+                        markingAsPaidTx   = op.transaction
                     }
                     menuTargetOp = nil
                 }
@@ -206,17 +203,24 @@ struct HomeView: View {
                     menuTargetOp = nil
                 }
             }
-            .sheet(item: $editingRecurring) { tx in
-                AddTransactionView(editingRecurring: tx)
+            .sheet(item: $editingRecurring) { rt in
+                AddTransactionView(editingRecurring: rt)
             }
-            .sheet(item: $editingOccurrence) { tx in
-                AddTransactionView(
-                    editingOccurrenceRecurring: tx,
-                    editingOccurrenceDate: editingOccDate
-                )
+            .sheet(item: $editingOccurrenceTx) { tx in
+                if let rt = recurringFor(tx) {
+                    AddTransactionView(
+                        editingOccurrenceRecurring: rt,
+                        editingOccurrenceDate:      editingOccDate
+                    )
+                }
             }
-            .sheet(item: $markingAsPaid) { tx in
-                MarkAsPaidSheet(transaction: tx, occurrenceDate: markingAsPaidDate)
+            .sheet(item: $markingAsPaidTx) { tx in
+                if let rt = recurringFor(tx) {
+                    MarkAsPaidSheet(transaction: rt, occurrenceDate: markingAsPaidDate)
+                } else {
+                    // Transaction ponctuelle — marquer directement
+                    Color.clear.onAppear { tx.isPaid = true }
+                }
             }
             .sheet(item: $selectedAccount) { account in
                 AccountTransactionsSheet(account: account, categories: allCategories)
@@ -511,8 +515,8 @@ struct HomeView: View {
         }
         if !tx.name.isEmpty { return tx.name }
         if let recurId = tx.recurringTransactionId,
-           let recurring = recurring.first(where: { $0.id == recurId }) {
-            return recurring.name
+           let rt = allRecurring.first(where: { $0.id == recurId }) {
+            return rt.name
         }
         if let notes = tx.notes, !notes.isEmpty { return notes }
         if let cat = tx.categoryId.flatMap({ id in allCategories.first { $0.id == id } }) { return cat.name }
@@ -532,14 +536,25 @@ struct HomeView: View {
 
     private var amberColor: Color { Color(red: 1.0, green: 0.7, blue: 0.0) }
 
+    /// Récurrence parente d'une UpcomingOperation.
+    private func recurringFor(_ op: UpcomingOperation) -> RecurringTransaction? {
+        recurringFor(op.transaction)
+    }
+
+    /// Récurrence parente d'une Transaction.
+    private func recurringFor(_ tx: Transaction) -> RecurringTransaction? {
+        guard let rid = tx.recurringTransactionId else { return nil }
+        return allRecurring.first { $0.id == rid }
+    }
+
     // MARK: - Prochaines opérations section
 
     private var upcomingOperationsSection: some View {
         let ops = UpcomingOperationsService.next(
             5,
-            from: recurring,
-            categories: allCategories,
-            overrides: allOverrides
+            from:        allTransactions,
+            categories:  allCategories,
+            recurringTx: allRecurring
         )
         return VStack(alignment: .leading, spacing: 0) {
             Text("Prochaines opérations")

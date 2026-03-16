@@ -23,8 +23,8 @@ struct PayPeriod: Identifiable {
     let isTight: Bool
     /// Vrai si referenceDate est compris dans [startDate, endDate]
     let isCurrentPeriod: Bool
-    /// Récurrences ayant au moins une occurrence dans cette période
-    let transactions: [RecurringTransaction]
+    /// Transactions (payées et planifiées) dans cette période
+    let transactions: [Transaction]
     /// Solde projeté pour chaque jour de la période (un point par jour de startDate à endDate)
     let dailyBalances: [(date: Date, balance: Decimal)]
 }
@@ -37,25 +37,25 @@ struct PeriodEngine {
 
     /// Génère `count` périodes de paie consécutives en commençant par la période qui contient `referenceDate`.
     ///
-    /// - Biweekly : périodes de 14 jours ancrées sur `settings.nextPayDate`.
+    /// - Biweekly : périodes de 14 jours ancrées sur `settings.periodAnchorDate`.
     /// - Monthly  : du `settings.periodStartDay` au `periodStartDay - 1` du mois suivant,
     ///              avec clamp silencieux si le jour n'existe pas dans le mois (ex: 31 en février).
     ///
-    /// Le solde de départ est la somme des `budgetContribution` des comptes `includeInBudget == true`.
-    /// La logique d'occurrences est déléguée à `ProjectionEngine.occurrences` — aucune duplication.
+    /// Source de vérité : les `Transaction` SwiftData.
+    /// - `isPaid == true`  → transaction réelle déjà comptabilisée dans `currentBalance`
+    /// - `isPaid == false` → occurrence future planifiée, à intégrer dans la projection
     static func generate(
         settings: UserSettings,
         accounts: [Account],
-        recurring: [RecurringTransaction],
+        transactions: [Transaction],
         count: Int,
         referenceDate: Date = .now,
-        overrides: [TransactionOverride] = [],
-        transactions: [Transaction] = [],
         dailySamplingStep: Int = 1
     ) -> [PayPeriod] {
         let calendar = Calendar.current
         let refDay   = calendar.startOfDay(for: referenceDate)
 
+        // Solde de départ = solde actuel des comptes (inclut déjà les transactions payées)
         let startingBalance = accounts
             .filter(\.includeInBudget)
             .reduce(Decimal(0)) { $0 + $1.budgetContribution }
@@ -65,6 +65,8 @@ struct PeriodEngine {
             settings: settings,
             calendar: calendar
         )
+
+        let budgetAccountIds = Set(accounts.filter(\.includeInBudget).map(\.id))
 
         var result:         [PayPeriod] = []
         var runningBalance: Decimal     = startingBalance
@@ -79,72 +81,42 @@ struct PeriodEngine {
             )
             let pEnd = calendar.date(byAdding: .day, value: -1, to: exclusiveEnd) ?? exclusiveEnd
 
-            var activeTx:   [RecurringTransaction] = []
-            var delta:      Decimal                = 0
-            var dayAmounts: [Date: Decimal]        = [:]
+            var delta:      Decimal         = 0
+            var dayAmounts: [Date: Decimal] = [:]
 
-            let budgetAccountIds        = Set(accounts.filter(\.includeInBudget).map(\.id))
             let isCurrentPeriodIteration = (i == 0)
 
-            // Période courante : intégrer les transactions réelles (isPaid == true) dans le delta
-            // et ramener le runningBalance au solde d'ouverture.
-            if isCurrentPeriodIteration {
-                let realTransactions = transactions.filter {
-                    budgetAccountIds.contains($0.accountId) &&
-                    $0.isPaid &&
-                    $0.date >= pStart &&
-                    $0.date < exclusiveEnd
-                }
-                let realDelta = realTransactions.reduce(Decimal(0)) { $0 + $1.amount }
-                delta          = realDelta
-                runningBalance -= realDelta
-                for tx in realTransactions {
-                    let day = calendar.startOfDay(for: tx.date)
-                    dayAmounts[day, default: 0] += tx.amount
-                }
+            // Transactions de cette période appartenant aux comptes budgétaires
+            let periodTxs = transactions.filter {
+                budgetAccountIds.contains($0.accountId) &&
+                $0.date >= pStart &&
+                $0.date < exclusiveEnd
             }
 
-            for tx in recurring {
-                // Ignorer les récurrences mises en pause
-                guard tx.isActive else { continue }
+            if isCurrentPeriodIteration {
+                // Période courante :
+                // - Les transactions payées sont déjà dans currentBalance
+                //   → on les soustrait du runningBalance pour remonter au solde d'ouverture
+                //   → puis on les ré-intègre via delta pour que le chiffre soit correct dans PayPeriodCard
+                // - Les transactions futures (isPaid == false) sont projetées normalement
+                let paidTxs = periodTxs.filter(\.isPaid)
+                let paidDelta = paidTxs.reduce(Decimal(0)) { $0 + $1.amount }
+                runningBalance -= paidDelta
 
-                let occs = ProjectionEngine.occurrences(
-                    of: tx, from: pStart, to: exclusiveEnd, calendar: calendar
-                )
-                guard !occs.isEmpty else { continue }
-                activeTx.append(tx)
+                for tx in paidTxs {
+                    delta += tx.amount
+                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
+                }
 
-                for occ in occs {
-                    let normalizedOcc = calendar.startOfDay(for: occ)
-                    let occOverride = overrides.first {
-                        $0.recurringTransactionId == tx.id &&
-                        calendar.isDate(
-                            calendar.startOfDay(for: $0.occurrenceDate),
-                            inSameDayAs: normalizedOcc
-                        )
-                    }
-
-                    if occOverride?.isSkipped == true { continue }
-                    if isCurrentPeriodIteration && occOverride?.isPaid == true { continue }
-
-                    let amount = occOverride?.actualAmount ?? tx.amount
-
-                    if tx.isTransfer {
-                        let sourceInBudget = budgetAccountIds.contains(tx.accountId)
-                        let destInBudget   = tx.transferDestinationAccountId
-                            .map { budgetAccountIds.contains($0) } ?? false
-                        if sourceInBudget {
-                            delta -= amount
-                            dayAmounts[normalizedOcc, default: 0] -= amount
-                        }
-                        if destInBudget {
-                            delta += amount
-                            dayAmounts[normalizedOcc, default: 0] += amount
-                        }
-                    } else {
-                        delta += amount
-                        dayAmounts[normalizedOcc, default: 0] += amount
-                    }
+                for tx in periodTxs.filter({ !$0.isPaid }) {
+                    delta += tx.amount
+                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
+                }
+            } else {
+                // Périodes futures : toutes les transactions sont planifiées (isPaid == false)
+                for tx in periodTxs {
+                    delta += tx.amount
+                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
                 }
             }
 
@@ -152,7 +124,7 @@ struct PeriodEngine {
             runningBalance += delta
             let isCurrent   = pStart <= refDay && refDay <= pEnd
 
-            // Solde journalier : un point tous les `dailySamplingStep` jours de pStart à pEnd.
+            // Solde journalier
             let step = max(1, dailySamplingStep)
             var runningDailyBalance = previous
             var dailySnapshots: [(date: Date, balance: Decimal)] = []
@@ -177,7 +149,7 @@ struct PeriodEngine {
                 delta:            delta,
                 isTight:          runningBalance < settings.tightThreshold,
                 isCurrentPeriod:  isCurrent,
-                transactions:     activeTx,
+                transactions:     periodTxs,
                 dailyBalances:    dailySnapshots
             ))
         }
@@ -207,15 +179,12 @@ struct PeriodEngine {
         switch settings.payPeriodFrequency {
 
         case .biweekly:
-            // Séquence de débuts : anchor + n × 14 jours (n ∈ ℤ)
             let anchor   = calendar.startOfDay(for: settings.periodAnchorDate)
             let daysDiff = calendar.dateComponents([.day], from: anchor, to: refDay).day ?? 0
             let n        = floorDiv(daysDiff, 14)
             return calendar.date(byAdding: .day, value: n * 14, to: anchor) ?? refDay
 
         case .monthly:
-            // La période commence le `periodStartDay` du mois.
-            // Si ce jour est après refDay, la période a commencé le mois précédent.
             let targetDay = settings.periodStartDay
             let refComps  = calendar.dateComponents([.year, .month], from: refDay)
 
@@ -227,7 +196,6 @@ struct PeriodEngine {
             if candidateStart <= refDay {
                 return candidateStart
             } else {
-                // On est avant le jour de début dans ce mois → la période a commencé le mois d'avant
                 let prevMonthDate = calendar.date(byAdding: .month, value: -1, to: candidateStart)!
                 let prevComps     = calendar.dateComponents([.year, .month], from: prevMonthDate)
                 return clampedDate(
@@ -245,8 +213,6 @@ struct PeriodEngine {
 
     // MARK: - Bornes [start, exclusiveEnd) de la période i
 
-    /// Retourne `(start, exclusiveEnd)` où exclusiveEnd est le premier instant
-    /// appartenant à la période suivante.
     private static func bounds(
         index: Int,
         currentStart: Date,
@@ -262,20 +228,15 @@ struct PeriodEngine {
             return (start, end)
 
         case .monthly:
-            // Avancer de `index` mois depuis currentStart, en reclampant à chaque fois.
-            // Nécessaire car currentStart peut être le 28 (clamped depuis 31 en fév)
-            // mais le mois suivant peut avoir 31 jours — on veut rester sur le targetDay original.
             let startComps = calendar.dateComponents([.year, .month], from: currentStart)
             let startYear  = startComps.year!
             let startMonth = startComps.month!
 
-            // Mois de début de la période i
             let totalMonthsStart = startMonth + index
             let year  = startYear + (totalMonthsStart - 1) / 12
             let month = ((totalMonthsStart - 1) % 12) + 1
             let start = clampedDate(year: year, month: month, targetDay: targetDay, calendar: calendar)
 
-            // Mois de début de la période i+1 (= exclusiveEnd)
             let totalMonthsEnd = startMonth + index + 1
             let yearEnd  = startYear + (totalMonthsEnd - 1) / 12
             let monthEnd = ((totalMonthsEnd - 1) % 12) + 1
@@ -292,29 +253,20 @@ struct PeriodEngine {
 
     // MARK: - Clamp utilitaire
 
-    /// Retourne le `targetDay` du mois donné, clampé au dernier jour disponible.
-    /// Ex: targetDay=31, month=février → retourne le 28 (ou 29 en bissextile).
     private static func clampedDate(
         year: Int,
         month: Int,
         targetDay: Int,
         calendar: Calendar
     ) -> Date {
-        let firstOfMonth  = calendar.date(from: DateComponents(year: year, month: month, day: 1))!
-        let daysInMonth   = calendar.range(of: .day, in: .month, for: firstOfMonth)!.count
-        let clampedDay    = min(targetDay, daysInMonth)
+        let firstOfMonth = calendar.date(from: DateComponents(year: year, month: month, day: 1))!
+        let daysInMonth  = calendar.range(of: .day, in: .month, for: firstOfMonth)!.count
+        let clampedDay   = min(targetDay, daysInMonth)
         return calendar.date(from: DateComponents(year: year, month: month, day: clampedDay))!
     }
 
     // MARK: - Arithmétique entière
 
-    /// Division entière avec arrondi vers −∞ (floor).
-    /// Nécessaire pour indexer correctement les périodes biweekly passées.
-    ///
-    /// Exemples :
-    ///   floorDiv( 7, 14) =  0  →  dans la période anchor
-    ///   floorDiv(14, 14) =  1  →  période suivante
-    ///   floorDiv(-3, 14) = -1  →  période précédente
     private static func floorDiv(_ a: Int, _ b: Int) -> Int {
         let q = a / b
         return (a % b != 0 && (a < 0) != (b < 0)) ? q - 1 : q
