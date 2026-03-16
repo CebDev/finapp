@@ -54,40 +54,12 @@ enum CategoryService {
             }
         }
 
-        // MARK: 🏠 Logement
+                // MARK: 🛒 Alimentation
         makeGroup(
             ns: "00000001",
-            name: "Logement",
-            icon: "house.fill",
-            color: "#5E5CE6",
-            children: [
-                (name: "Loyer / Hypothèque", icon: "house.fill"),
-                (name: "Électricité",         icon: "bolt.fill"),
-                (name: "Internet",            icon: "wifi"),
-                (name: "Assurance habitation",icon: "shield.fill"),
-            ]
-        )
-
-        // MARK: 🚗 Transport
-        makeGroup(
-            ns: "00000002",
-            name: "Transport",
-            icon: "car.fill",
-            color: "#FF9F0A",
-            children: [
-                (name: "Essence",            icon: "fuelpump.fill"),
-                (name: "Assurance auto",     icon: "car.fill"),
-                (name: "Transport en commun",icon: "tram.fill"),
-                (name: "Stationnement",      icon: "parkingsign"),
-            ]
-        )
-
-        // MARK: 🛒 Alimentation
-        makeGroup(
-            ns: "00000003",
             name: "Alimentation",
             icon: "cart.fill",
-            color: "#30D158",
+            color: "#d13030",
             children: [
                 (name: "Épicerie",    icon: "cart.fill"),
                 (name: "Restaurants", icon: "fork.knife"),
@@ -95,24 +67,28 @@ enum CategoryService {
             ]
         )
 
-        // MARK: 💊 Santé
+        // MARK: Achat
         makeGroup(
-            ns: "00000004",
-            name: "Santé",
-            icon: "heart.fill",
-            color: "#FF375F",
+            ns: "00000002",
+            name: "Achats",
+            icon: "img:shoppingmall",
+            color: "#1b79e4",
             children: [
-                (name: "Pharmacie", icon: "pills.fill"),
-                (name: "Médecin",   icon: "stethoscope"),
+                (name: "Vêtements et chaussures",   icon: "img:clothes"),
+                (name: "Beauté",                    icon: "img:beauty"),
+                (name: "Maison, jardin",            icon: "house.fill"),
+                (name: "Animaux de compagnie",      icon: "img:pet"),
+                (name: "Electronique, accessoires", icon: "img:electronics"),
+                (name: "Cadeaux, plaisirs",         icon: "img:gift"),
             ]
         )
 
         // MARK: 🎬 Loisirs
         makeGroup(
-            ns: "00000005",
+            ns: "00000003",
             name: "Loisirs",
             icon: "tv.fill",
-            color: "#BF5AF2",
+            color: "#b55af2",
             children: [
                 (name: "Abonnements", icon: "rectangle.stack.fill"),
                 (name: "Sorties",     icon: "ticket.fill"),
@@ -121,23 +97,69 @@ enum CategoryService {
             ]
         )
 
-        // MARK: 💼 Revenus
+        
+
+        // MARK: 🚗 Transport
+        makeGroup(
+            ns: "00000004",
+            name: "Transport",
+            icon: "car.fill",
+            color: "#b4b4b4",
+            children: [
+                (name: "Essence",            icon: "fuelpump.fill"),
+                (name: "Assurance auto",     icon: "car.fill"),
+                (name: "Transport en commun",icon: "tram.fill"),
+                (name: "Stationnement",      icon: "parkingsign"),
+            ]
+        )
+
+
+
+        // MARK: 💊 Santé
+        makeGroup(
+            ns: "00000005",
+            name: "Santé",
+            icon: "heart.fill",
+            color: "#a5ff37",
+            children: [
+                (name: "Pharmacie", icon: "pills.fill"),
+                (name: "Médecin",   icon: "stethoscope"),
+            ]
+        )
+
+        // MARK: 🏠 Logement
         makeGroup(
             ns: "00000006",
+            name: "Logement",
+            icon: "house.fill",
+            color: "#ffa332",
+            children: [
+                (name: "Loyer / Hypothèque", icon: "house.fill"),
+                (name: "Électricité",         icon: "bolt.fill"),
+                (name: "Internet",            icon: "wifi"),
+                (name: "Assurance habitation",icon: "shield.fill"),
+            ]
+        )
+
+
+
+        // MARK: 💼 Revenus
+        makeGroup(
+            ns: "00000007",
             name: "Revenus",
             icon: "arrow.down.circle.fill",
-            color: "#32D74B",
+            color: "#c3c60f",
             children: [
-                (name: "Salaire",        icon: "banknote.fill"),
-                (name: "Freelance",      icon: "briefcase.fill"),
-                (name: "REER",           icon: "chart.line.uptrend.xyaxis"),
-                (name: "Remboursements", icon: "arrow.uturn.left.circle.fill"),
+                (name: "Salaire",               icon: "banknote.fill"),
+                (name: "Freelance",             icon: "briefcase.fill"),
+                (name: "Intérêts, dividendes",  icon: "chart.line.uptrend.xyaxis"),
+                (name: "Remboursements",        icon: "arrow.uturn.left.circle.fill"),
             ]
         )
 
         // MARK: 🎓 Éducation
         makeGroup(
-            ns: "00000007",
+            ns: "00000008",
             name: "Éducation",
             icon: "book.fill",
             color: "#0A84FF",
@@ -150,10 +172,10 @@ enum CategoryService {
 
         // MARK: 🏦 Finances
         makeGroup(
-            ns: "00000008",
+            ns: "00000009",
             name: "Finances",
             icon: "chart.pie.fill",
-            color: "#FFD60A",
+            color: "#0aff8d",
             children: [
                 (name: "CELI",              icon: "dollarsign.circle.fill"),
                 (name: "REER",              icon: "chart.line.uptrend.xyaxis"),
@@ -193,5 +215,31 @@ enum CategoryService {
             context.insert(category)
         }
         try? context.save()
+    }
+
+    // MARK: - Déduplication CloudKit
+
+    /// Supprime les catégories système dupliquées après une sync CloudKit.
+    /// Appelé sur `NSPersistentStoreRemoteChange` — garde le premier enregistrement
+    /// trouvé pour chaque UUID et supprime les copies.
+    static func deduplicateIfNeeded(context: ModelContext) {
+        let descriptor = FetchDescriptor<Category>(
+            predicate: #Predicate { $0.isSystem }
+        )
+        guard let systemCategories = try? context.fetch(descriptor) else { return }
+
+        var seen: [UUID: Bool] = [:]
+        var didDelete = false
+        for category in systemCategories {
+            if seen[category.id] != nil {
+                context.delete(category)
+                didDelete = true
+            } else {
+                seen[category.id] = true
+            }
+        }
+        if didDelete {
+            try? context.save()
+        }
     }
 }

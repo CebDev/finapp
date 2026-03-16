@@ -26,6 +26,13 @@ struct caniApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onReceive(
+                    NotificationCenter.default.publisher(
+                        for: Notification.Name("NSPersistentStoreRemoteChangeNotification")
+                    )
+                ) { _ in
+                    CategoryService.deduplicateIfNeeded(context: container.mainContext)
+                }
         }
         .modelContainer(container)
     }

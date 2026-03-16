@@ -47,9 +47,16 @@ struct CategoryIconBadge: View {
             RoundedRectangle(cornerRadius: size * 0.28)
                 .fill((Color(hex: color) ?? .indigo).opacity(0.15))
                 .frame(width: size, height: size)
-            Image(systemName: icon)
-                .font(.system(size: size * 0.48, weight: .medium))
-                .foregroundStyle(Color(hex: color) ?? .indigo)
+            if icon.isCustomCategoryIcon {
+                Image(icon.customAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: size * 0.62, height: size * 0.62)
+            } else {
+                Image(systemName: icon)
+                    .font(.system(size: size * 0.48, weight: .medium))
+                    .foregroundStyle(Color(hex: color) ?? .indigo)
+            }
         }
     }
 }
@@ -75,6 +82,11 @@ private enum CategoryFormMode {
     case edit(category: Category)
 }
 
+private enum IconTab: String, CaseIterable {
+    case system = "SF Symbols"
+    case png    = "SVG"
+}
+
 private struct CategoryFormSheet: View {
     let mode: CategoryFormMode
 
@@ -84,18 +96,21 @@ private struct CategoryFormSheet: View {
     @State private var name: String
     @State private var selectedIcon: String
     @State private var selectedColor: Color
+    @State private var iconTab: IconTab
 
     init(mode: CategoryFormMode) {
         self.mode = mode
         switch mode {
         case .add(let parent):
-            _name = State(initialValue: "")
-            _selectedIcon = State(initialValue: parent.icon)
+            _name          = State(initialValue: "")
+            _selectedIcon  = State(initialValue: parent.icon.isCustomCategoryIcon ? "square.grid.2x2.fill" : parent.icon)
             _selectedColor = State(initialValue: Color(hex: parent.color) ?? .indigo)
+            _iconTab       = State(initialValue: .system)
         case .edit(let cat):
-            _name = State(initialValue: cat.name)
-            _selectedIcon = State(initialValue: cat.icon)
+            _name          = State(initialValue: cat.name)
+            _selectedIcon  = State(initialValue: cat.icon)
             _selectedColor = State(initialValue: Color(hex: cat.color) ?? .indigo)
+            _iconTab       = State(initialValue: cat.icon.isCustomCategoryIcon ? .png : .system)
         }
     }
 
@@ -105,7 +120,7 @@ private struct CategoryFormSheet: View {
 
     private var titleKey: String {
         switch mode {
-        case .add: return "categories.sheet.add.title"
+        case .add:  return "categories.sheet.add.title"
         case .edit: return "categories.sheet.edit.title"
         }
     }
@@ -124,34 +139,51 @@ private struct CategoryFormSheet: View {
 
                 // MARK: Icône
                 Section(String(localized: "categories.form.icon.label")) {
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6),
-                        spacing: 10
-                    ) {
-                        ForEach(pickerIcons, id: \.self) { icon in
-                            Button {
-                                selectedIcon = icon
-                            } label: {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(
-                                            selectedIcon == icon
-                                                ? selectedColor
-                                                : Color(.secondarySystemBackground)
-                                        )
-                                        .frame(height: 44)
-                                    Image(systemName: icon)
-                                        .font(.system(size: 18))
-                                        .foregroundStyle(
-                                            selectedIcon == icon ? .white : selectedColor
-                                        )
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .animation(.easeInOut(duration: 0.12), value: selectedIcon)
+                    Picker("", selection: $iconTab) {
+                        ForEach(IconTab.allCases, id: \.self) { tab in
+                            Text(tab.rawValue).tag(tab)
                         }
                     }
+                    .pickerStyle(.segmented)
                     .padding(.vertical, 4)
+                    .onChange(of: iconTab) { _, newTab in
+                        // Réinitialise la sélection au changement d'onglet
+                        if newTab == .system {
+                            selectedIcon = "square.grid.2x2.fill"
+                        } else if let first = customCategoryIcons.first {
+                            selectedIcon = .customIcon(first)
+                        }
+                    }
+
+                    if iconTab == .system {
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6),
+                            spacing: 10
+                        ) {
+                            ForEach(pickerIcons, id: \.self) { icon in
+                                iconCell(icon: icon, isCustom: false)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } else {
+                        if customCategoryIcons.isEmpty {
+                            Text("categories.form.icon.png.empty")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 12)
+                        } else {
+                            LazyVGrid(
+                                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6),
+                                spacing: 10
+                            ) {
+                                ForEach(customCategoryIcons, id: \.self) { assetName in
+                                    iconCell(icon: .customIcon(assetName), isCustom: true)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
                 }
 
                 // MARK: Couleur
@@ -181,8 +213,34 @@ private struct CategoryFormSheet: View {
         }
     }
 
+    @ViewBuilder
+    private func iconCell(icon: String, isCustom: Bool) -> some View {
+        let isSelected = selectedIcon == icon
+        Button {
+            selectedIcon = icon
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? selectedColor : Color(.secondarySystemBackground))
+                    .frame(height: 44)
+                if isCustom {
+                    Image(icon.customAssetName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 26, height: 26)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(isSelected ? .white : selectedColor)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.12), value: selectedIcon)
+    }
+
     private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let trimmed  = name.trimmingCharacters(in: .whitespaces)
         let hexColor = selectedColor.toHex()
 
         switch mode {
@@ -197,8 +255,8 @@ private struct CategoryFormSheet: View {
             )
             context.insert(sub)
         case .edit(let cat):
-            cat.name = trimmed
-            cat.icon = selectedIcon
+            cat.name  = trimmed
+            cat.icon  = selectedIcon
             cat.color = hexColor
         }
         dismiss()

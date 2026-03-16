@@ -193,31 +193,40 @@ struct PeriodProgressChart: View {
             }
             RuleMark(x: .value("Début période", period.startDate))
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                .foregroundStyle(Color.secondary.opacity(0.45))
+                .foregroundStyle(Color.green.opacity(0.50))
                 .annotation(position: .top, spacing: 2) {
                     Text("Début")
-                        .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.green)
                         .padding(.horizontal, 4).padding(.vertical, 2)
-                        .background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 4))
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.green.opacity(0.30), lineWidth: 0.5))
                 }
             RuleMark(x: .value("Fin période", period.endDate))
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                .foregroundStyle(Color.secondary.opacity(0.45))
+                .foregroundStyle(Color.orange.opacity(0.50))
                 .annotation(position: .top, spacing: 2) {
                     Text("Fin")
-                        .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.orange)
                         .padding(.horizontal, 4).padding(.vertical, 2)
-                        .background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 4))
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.orange.opacity(0.30), lineWidth: 0.5))
                 }
             if period.isCurrentPeriod {
                 RuleMark(x: .value("Aujourd'hui", Date.now))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                    .foregroundStyle(Color.secondary.opacity(0.55))
-                    .annotation(position: .top, spacing: 2) {
+                    .foregroundStyle(Color.indigo.opacity(0.60))
+                    .annotation(position: .automatic, spacing: 2) {
                         Text("Aujourd'hui")
-                            .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.indigo)
                             .padding(.horizontal, 4).padding(.vertical, 2)
-                            .background(.ultraThinMaterial).clipShape(RoundedRectangle(cornerRadius: 4))
+                            .background(Color.indigo.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.indigo.opacity(0.30), lineWidth: 0.5))
                     }
             }
         }

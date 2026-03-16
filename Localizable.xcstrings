@@ -950,6 +950,9 @@
         }
       }
     },
+    "categories.form.icon.png.empty" : {
+
+    },
     "categories.form.name.label" : {
       "extractionState" : "manual",
       "localizations" : {
