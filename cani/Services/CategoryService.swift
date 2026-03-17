@@ -74,12 +74,13 @@ enum CategoryService {
             icon: "img:shoppingmall",
             color: "#1b79e4",
             children: [
-                (name: "Vêtements et chaussures",   icon: "img:clothes"),
-                (name: "Beauté",                    icon: "img:beauty"),
-                (name: "Maison, jardin",            icon: "house.fill"),
                 (name: "Animaux de compagnie",      icon: "img:pet"),
-                (name: "Electronique, accessoires", icon: "img:electronics"),
+                (name: "Beauté",                    icon: "img:beauty"),
                 (name: "Cadeaux, plaisirs",         icon: "img:gift"),
+                (name: "Electronique, accessoires", icon: "img:electronics"),
+                (name: "Livres, magazines",         icon: "img:book"),
+                (name: "Maison, jardin",            icon: "house.fill"),
+                (name: "Vêtements et chaussures",   icon: "img:clothes"),
             ]
         )
 
@@ -94,17 +95,16 @@ enum CategoryService {
                 (name: "Sorties",     icon: "ticket.fill"),
                 (name: "Sport",       icon: "figure.run"),
                 (name: "Voyages",     icon: "airplane"),
+                (name: "Internet",            icon: "wifi"),
             ]
         )
-
-        
 
         // MARK: 🚗 Transport
         makeGroup(
             ns: "00000004",
             name: "Transport",
             icon: "car.fill",
-            color: "#b4b4b4",
+            color: "#656565",
             children: [
                 (name: "Essence",            icon: "fuelpump.fill"),
                 (name: "Assurance auto",     icon: "car.fill"),
@@ -113,14 +113,12 @@ enum CategoryService {
             ]
         )
 
-
-
         // MARK: 💊 Santé
         makeGroup(
             ns: "00000005",
             name: "Santé",
             icon: "heart.fill",
-            color: "#a5ff37",
+            color: "#7ec528",
             children: [
                 (name: "Pharmacie", icon: "pills.fill"),
                 (name: "Médecin",   icon: "stethoscope"),
@@ -136,12 +134,9 @@ enum CategoryService {
             children: [
                 (name: "Loyer / Hypothèque", icon: "house.fill"),
                 (name: "Électricité",         icon: "bolt.fill"),
-                (name: "Internet",            icon: "wifi"),
                 (name: "Assurance habitation",icon: "shield.fill"),
             ]
         )
-
-
 
         // MARK: 💼 Revenus
         makeGroup(
