@@ -156,6 +156,7 @@ struct BalanceChartView: View {
             buildChart()
                 .chartYAxis { yAxisContent }
                 .frame(height: 220)
+                .clipped()
         } else {
             buildChart()
                 .chartXScale(domain: miniXDomain)
@@ -299,10 +300,12 @@ struct BalanceChartView: View {
 
     @ChartContentBuilder
     private func areaMarks() -> some ChartContent {
+        let yMin = tightYDomain.lowerBound
         ForEach(chartPoints) { pt in
             AreaMark(
-                x: .value("Date",  pt.date),
-                y: .value("Solde", pt.balance)
+                x:      .value("Date",  pt.date),
+                yStart: .value("Bas",   yMin),
+                yEnd:   .value("Solde", pt.balance)
             )
             .interpolationMethod(.monotone)
             .foregroundStyle(areaGradient())

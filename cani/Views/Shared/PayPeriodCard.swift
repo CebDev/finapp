@@ -65,66 +65,64 @@ struct PayPeriodCard: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .center, spacing: 10) {
+            HStack(alignment: .center, spacing: 0) {
 
-                    if carryForwardBalance {
-                        // ── Mode cumulé : dates + delta à gauche, solde cumulé à droite ──
+                // Barre d'accentuation gauche — colorée selon l'état de la période
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(barColor)
+                    .frame(width: 3, height: 34)
+                    .padding(.leading, 14)
+                    .padding(.trailing, 12)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            dateRow
-                            Text(deltaLabel)
-                                .font(.system(size: 11))
-                                .foregroundStyle(deltaIsPositive ? Color.green : Color.orange)
-                        }
-                        .frame(minWidth: 130, alignment: .leading)
+                if carryForwardBalance {
+                    // ── Mode cumulé : dates + delta à gauche, solde cumulé à droite ──
 
-                        progressBar
-
-                        HStack(spacing: 5) {
-                            Text(balanceLabel)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(period.isTight ? amberColor : Color.primary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Circle()
-                                .fill(period.isTight ? amberColor : Color.clear)
-                                .frame(width: 6, height: 6)
-                        }
-                        .frame(minWidth: 80, alignment: .trailing)
-
-                    } else {
-                        // ── Mode isolé : dates + solde cumulé (petit) à gauche, delta (grand) à droite ──
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            dateRow
-                            Text(balanceLabel)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(minWidth: 130, alignment: .leading)
-
-                        progressBar
-
-                        HStack(spacing: 5) {
-                            Text(deltaLabel)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(deltaIsPositive ? Color.green : Color.orange)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                            Circle()
-                                .fill(period.isTight ? amberColor : Color.clear)
-                                .frame(width: 6, height: 6)
-                        }
-                        .frame(minWidth: 80, alignment: .trailing)
+                    VStack(alignment: .leading, spacing: 2) {
+                        dateRow
+                        Text(deltaLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(deltaIsPositive ? Color.green : amberColor)
                     }
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 52)
+                    .frame(minWidth: 118, alignment: .leading)
 
-                Divider()
-                    .padding(.leading, 16)
+                    progressBar
+
+                    Text(balanceLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(period.isTight ? amberColor : Color.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(minWidth: 76, alignment: .trailing)
+
+                } else {
+                    // ── Mode isolé : dates + solde cumulé (petit) à gauche, delta (grand) à droite ──
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        dateRow
+                        Text(balanceLabel)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 118, alignment: .leading)
+
+                    progressBar
+
+                    Text(deltaLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(deltaIsPositive ? Color.green : amberColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(minWidth: 76, alignment: .trailing)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 14)
             }
+            .frame(height: 58)
+            .background(period.isTight ? amberColor.opacity(0.05) : Color.clear)
         }
         .buttonStyle(.plain)
     }

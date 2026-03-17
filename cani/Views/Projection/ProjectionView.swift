@@ -264,20 +264,31 @@ struct ProjectionView: View {
                     .clipShape(Capsule())
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
 
             let carryForward = settings?.carryForwardBalance ?? true
             let maxBal: Decimal = carryForward
                 ? (allPeriods.map(\.projectedBalance).max() ?? 1)
                 : (allPeriods.map { abs($0.delta) }.max() ?? 1)
-            ForEach(filteredPeriods) { period in
-                PayPeriodCard(
-                    period:              period,
-                    maxBalance:          maxBal,
-                    onTap:               { selectedPeriod = period },
-                    carryForwardBalance: carryForward
-                )
+
+            VStack(spacing: 0) {
+                ForEach(filteredPeriods) { period in
+                    PayPeriodCard(
+                        period:              period,
+                        maxBalance:          maxBal,
+                        onTap:               { selectedPeriod = period },
+                        carryForwardBalance: carryForward
+                    )
+                    if period.id != filteredPeriods.last?.id {
+                        Divider()
+                            .padding(.leading, 16)
+                    }
+                }
             }
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 16)
         }
     }
 

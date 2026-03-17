@@ -399,14 +399,25 @@ struct HomeView: View {
             let maxBal: Decimal = carryForward
                 ? (upcomingPeriods.map(\.projectedBalance).max() ?? 1)
                 : (upcomingPeriods.map { abs($0.delta) }.max() ?? 1)
-            ForEach(upcomingPeriods) { period in
-                PayPeriodCard(
-                    period:              period,
-                    maxBalance:          maxBal,
-                    onTap:               { selectedPeriod = period },
-                    carryForwardBalance: carryForward
-                )
+
+            VStack(spacing: 0) {
+                ForEach(upcomingPeriods) { period in
+                    PayPeriodCard(
+                        period:              period,
+                        maxBalance:          maxBal,
+                        onTap:               { selectedPeriod = period },
+                        carryForwardBalance: carryForward
+                    )
+                    if period.id != upcomingPeriods.last?.id {
+                        Divider()
+                            .padding(.leading, 16)
+                    }
+                }
             }
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 16)
         }
     }
 
