@@ -19,6 +19,9 @@
     "**%@**" : {
 
     },
+    "/ mois" : {
+
+    },
     "%lld" : {
 
     },
@@ -42,6 +45,9 @@
 
     },
     "−" : {
+
+    },
+    "−%@" : {
 
     },
     "🔁 Transaction récurrente" : {
@@ -75,6 +81,9 @@
 
     },
     "Abonnement" : {
+
+    },
+    "Abonnement terminé" : {
 
     },
     "Abonnements" : {
@@ -854,6 +863,9 @@
     "Aucune dépense récurrente" : {
 
     },
+    "Aucune occurrence à venir" : {
+
+    },
     "Aucune opération planifiée" : {
 
     },
@@ -869,6 +881,9 @@
     "Aujourd'hui" : {
 
     },
+    "AUJOURD'HUI" : {
+
+    },
     "Autre" : {
 
     },
@@ -882,6 +897,9 @@
 
     },
     "Bas" : {
+
+    },
+    "Bientôt disponible" : {
 
     },
     "C" : {
@@ -1057,6 +1075,9 @@
           }
         }
       }
+    },
+    "Ce montant correspond uniquement aux transactions marquées comme payées dans l'app. Il ne reflète pas les paiements effectués avant l'utilisation de CanI." : {
+
     },
     "cette période" : {
 
@@ -1336,6 +1357,9 @@
 
     },
     "Générer les périodes" : {
+
+    },
+    "Historique enregistré" : {
 
     },
     "home.accounts.see_all" : {
@@ -1726,6 +1750,9 @@
     "Prochaines périodes" : {
 
     },
+    "Prochains prélèvements" : {
+
+    },
     "Productivité" : {
 
     },
@@ -1745,6 +1772,9 @@
 
     },
     "Reprendre le solde précédent" : {
+
+    },
+    "Résilier cet abonnement" : {
 
     },
     "Revenus" : {
@@ -1932,6 +1962,9 @@
 
     },
     "Supprimer la récurrence ?" : {
+
+    },
+    "Suspendu" : {
 
     },
     "tab.add" : {

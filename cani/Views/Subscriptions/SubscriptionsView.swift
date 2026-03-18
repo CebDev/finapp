@@ -6,47 +6,6 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - Frequency helpers (contexte abonnements)
-
-private extension Frequency {
-    var subShortLabel: String {
-        switch self {
-        case .oneTime:     return ""
-        case .weekly:      return "/sem"
-        case .biweekly:    return "/2 sem"
-        case .semimonthly: return "/2×mois"
-        case .monthly:     return "/mois"
-        case .quarterly:   return "/trim"
-        case .annual:      return "/an"
-        }
-    }
-
-    var subLocalizedLabel: String {
-        switch self {
-        case .oneTime:     return "Ponctuel"
-        case .weekly:      return "Hebdomadaire"
-        case .biweekly:    return "Aux 2 semaines"
-        case .semimonthly: return "Semi-mensuel"
-        case .monthly:     return "Mensuel"
-        case .quarterly:   return "Trimestriel"
-        case .annual:      return "Annuel"
-        }
-    }
-
-    func normalizedMonthlyCost(amount: Decimal) -> Decimal {
-        let a = Swift.abs(amount)
-        switch self {
-        case .oneTime:     return 0
-        case .weekly:      return a * 52 / 12
-        case .biweekly:    return a * 26 / 12
-        case .semimonthly: return a * 2
-        case .monthly:     return a
-        case .quarterly:   return a / 3
-        case .annual:      return a / 12
-        }
-    }
-}
-
 // MARK: - Color(hex:)
 
 private extension Color {
@@ -73,7 +32,7 @@ struct SubscriptionsView: View {
 
     @State private var displayedYear:  Int = Calendar.current.component(.year,  from: Date())
     @State private var displayedMonth: Int = Calendar.current.component(.month, from: Date())
-    @State private var editingTx:      RecurringTransaction? = nil
+    @State private var detailTx:       RecurringTransaction? = nil
     @State private var showingAddSheet = false
 
     private var frCalendar: Calendar {
@@ -144,7 +103,7 @@ struct SubscriptionsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 20) {
                     SummaryStrip(total: totalMonthly, count: subscriptions.count)
                         .padding(.horizontal)
 
@@ -156,7 +115,7 @@ struct SubscriptionsView: View {
                         dayOccurrences:    dayOccurrences,
                         onPreviousMonth:   { shiftMonth(by: -1) },
                         onNextMonth:       { shiftMonth(by:  1) },
-                        onTxTap:           { tx in editingTx = tx }
+                        onTxTap:           { tx in detailTx = tx }
                     )
                     .padding(.horizontal)
 
@@ -164,7 +123,7 @@ struct SubscriptionsView: View {
                         ListSection(
                             entries:  listEntries,
                             calendar: frCalendar,
-                            onTap:    { tx in editingTx = tx }
+                            onTap:    { tx in detailTx = tx }
                         )
                         .padding(.horizontal)
                     } else if subscriptions.isEmpty {
@@ -175,6 +134,7 @@ struct SubscriptionsView: View {
                 }
                 .padding(.top, 8)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Abonnements")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -191,8 +151,8 @@ struct SubscriptionsView: View {
                     }
             )
         }
-        .sheet(item: $editingTx) { tx in
-            AddTransactionView(editingRecurring: tx)
+        .sheet(item: $detailTx) { tx in
+            SubscriptionDetailSheet(tx: tx)
         }
         .sheet(isPresented: $showingAddSheet) {
             AddTransactionView(defaultRecurring: true, defaultSubscription: true)
@@ -247,8 +207,9 @@ private struct SummaryStrip: View {
             )
         }
         .padding(.vertical, 12)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -332,8 +293,9 @@ private struct CalendarCard: View {
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -377,7 +339,7 @@ private struct DayCell: View {
             }
             .frame(height: 48)
             .padding(3)
-            .background(isToday ? Color.accentColor.opacity(0.12) : Color(.systemBackground))
+            .background(isToday ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
@@ -431,8 +393,9 @@ private struct ListSection: View {
                 }
             }
         }
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
     }
 }
 

@@ -77,16 +77,8 @@ struct PeriodProgressChart: View {
     }
 
     private func budgetDelta(for tx: Transaction) -> Decimal {
-        let sourceInBudget = budgetAccountIds.isEmpty || budgetAccountIds.contains(tx.accountId)
-        if tx.isTransfer {
-            let destInBudget = tx.transferDestinationAccountId
-                .map { budgetAccountIds.isEmpty || budgetAccountIds.contains($0) } ?? false
-            var delta: Decimal = 0
-            if sourceInBudget { delta -= tx.amount }
-            if destInBudget   { delta += tx.amount }
-            return delta
-        }
-        return sourceInBudget ? tx.amount : 0
+        guard budgetAccountIds.isEmpty || budgetAccountIds.contains(tx.accountId) else { return 0 }
+        return tx.amount
     }
 
     private var yMin: Double {

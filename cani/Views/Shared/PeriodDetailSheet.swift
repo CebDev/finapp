@@ -79,6 +79,7 @@ struct PeriodDetailSheet: View {
 
     /// État d'une transaction planifiée dans la période courante.
     private enum PlannedState {
+        case today
         case overdue   // date ≤ aujourd'hui, non payée
         case upcoming  // date > aujourd'hui, non payée
         case future    // période future (pas de distinction)
@@ -87,7 +88,8 @@ struct PeriodDetailSheet: View {
     private func plannedState(for tx: Transaction) -> PlannedState {
         guard period.isCurrentPeriod else { return .future }
         let today = Calendar.current.startOfDay(for: .now)
-        return Calendar.current.startOfDay(for: tx.date) <= today ? .overdue : .upcoming
+        if Calendar.current.startOfDay(for: tx.date) == today { return .today } 
+        return Calendar.current.startOfDay(for: tx.date) < today ? .overdue : .upcoming
     }
 
     // MARK: - Body
@@ -282,6 +284,7 @@ struct PeriodDetailSheet: View {
         let cat       = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
         let rt        = recurring(for: tx)
         let state     = plannedState(for: tx)
+        let today     = state == .today
         let isOverdue = state == .overdue
         let logo      = rt?.logo ?? ""
 
@@ -295,7 +298,7 @@ struct PeriodDetailSheet: View {
             } else {
                 CategoryIconBadge(icon: "square.dashed", color: "#98989D", size: 36)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(label(for: tx))
                     .font(.body).foregroundStyle(.primary).lineLimit(1)
                 HStack(spacing: 4) {
@@ -309,8 +312,16 @@ struct PeriodDetailSheet: View {
                     if isOverdue {
                         Text("EN RETARD")
                             .font(.caption2.weight(.bold)).foregroundStyle(.white)
+                            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 5).padding(.vertical, 2)
                             .background(Color.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    } else if today {
+                        Text("AUJOURD'HUI")
+                            .font(.caption2.weight(.bold)).foregroundStyle(.white)
+                            .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Color.orange)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                     if tx.isCustomized {
