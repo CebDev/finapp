@@ -21,6 +21,7 @@ struct caniApp: App {
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .private("iCloud.cebdev.cani"))
         container = try! ModelContainer(for: schema, configurations: config)
         CategoryService.seedIfNeeded(context: container.mainContext)
+        CategoryService.syncDefaultCategories(context: container.mainContext)
     }
 
     var body: some Scene {

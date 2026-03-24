@@ -33,6 +33,7 @@ struct PeriodDetailSheet: View {
     @State private var markingAsPaidTx:      Transaction?  = nil
     @State private var editingRecurring:     RecurringTransaction? = nil
     @State private var editingOccurrenceTx:  Transaction?  = nil
+    @State private var editingPlannedTx:     Transaction?  = nil
 
     // MARK: - Computed
 
@@ -59,21 +60,43 @@ struct PeriodDetailSheet: View {
         carryForwardBalance ? period.projectedBalance : isolatedProjectedBalance
     }
 
+    /// Restant disponible = solde précédent + revenus déjà encaissés − toutes les dépenses (payées + prévues).
+    /// Répond à : "que reste-t-il si toutes mes dépenses de la période passent, avec les revenus déjà reçus ?"
+    private var currentRunningBalance: Decimal {
+        let paidIncome = period.transactions
+            .filter { $0.isPaid && $0.amount > 0 }
+            .reduce(Decimal(0)) { $0 + $1.amount }
+        let allExpenses = period.transactions
+            .filter { $0.amount < 0 }
+            .reduce(Decimal(0)) { $0 + $1.amount } // montants négatifs
+        let base = carryForwardBalance ? period.previousBalance : Decimal(0)
+        return base + paidIncome + allExpenses
+    }
+
     private var budgetAccountIds: Set<UUID> {
         Set(allAccounts.filter(\.includeInBudget).map(\.id))
     }
 
-    /// Récurrence parente d'une Transaction, si elle existe.
+    // MARK: - Lookups O(1)
+
+    private var categoriesById: [UUID: Category] {
+        Dictionary(uniqueKeysWithValues: allCategories.map { ($0.id, $0) })
+    }
+    private var recurringById: [UUID: RecurringTransaction] {
+        Dictionary(uniqueKeysWithValues: allRecurring.map { ($0.id, $0) })
+    }
+
+    /// Récurrence parente d'une Transaction — O(1).
     private func recurring(for tx: Transaction) -> RecurringTransaction? {
         guard let rid = tx.recurringTransactionId else { return nil }
-        return allRecurring.first { $0.id == rid }
+        return recurringById[rid]
     }
 
     /// Nom d'affichage d'une transaction.
     private func label(for tx: Transaction) -> String {
         if !tx.name.isEmpty { return tx.name }
         if let notes = tx.notes, !notes.isEmpty { return notes }
-        if let cat = tx.categoryId.flatMap({ id in allCategories.first { $0.id == id } }) { return cat.name }
+        if let cat = tx.categoryId.flatMap({ categoriesById[$0] }) { return cat.name }
         return tx.amount > 0 ? "Revenu" : "Dépense"
     }
 
@@ -149,17 +172,33 @@ struct PeriodDetailSheet: View {
                 titleVisibility: .visible
             ) {
                 Button("Payer") {
-                    markingAsPaidTx  = tappedPlannedTx
-                    tappedPlannedTx  = nil
+                    guard let tx = tappedPlannedTx else { return }
+                    if recurring(for: tx) != nil {
+                        markingAsPaidTx = tx
+                    } else {
+                        markPlannedTxAsPaid(tx)
+                    }
+                    tappedPlannedTx = nil
                 }
-                Button("Modifier cette occurrence") {
-                    editingOccurrenceTx = tappedPlannedTx
-                    tappedPlannedTx     = nil
+                if let tx = tappedPlannedTx,
+                   recurring(for: tx) != nil {
+                    Button("Modifier cette occurrence") {
+                        editingOccurrenceTx = tx
+                        tappedPlannedTx     = nil
+                    }
                 }
                 if let tx = tappedPlannedTx,
                    let rt = recurring(for: tx) {
                     Button("Modifier toutes les occurrences à venir") {
                         editingRecurring = rt
+                        tappedPlannedTx  = nil
+                    }
+                }
+                if let tx = tappedPlannedTx,
+                   recurring(for: tx) == nil,
+                   !tx.isTransfer {
+                    Button("Modifier") {
+                        editingPlannedTx = tx
                         tappedPlannedTx  = nil
                     }
                 }
@@ -187,16 +226,7 @@ struct PeriodDetailSheet: View {
             }
             .sheet(item: $markingAsPaidTx) { tx in
                 if let rt = recurring(for: tx) {
-                    // Récurrence : MarkAsPaidSheet gère le montant réel + génération suivante
                     MarkAsPaidSheet(transaction: rt, occurrenceDate: tx.date)
-                } else {
-                    // Transaction ponctuelle planifiée : on marque isPaid directement
-                    Color.clear.onAppear {
-                        tx.isPaid = true
-                        if let account = allAccounts.first(where: { $0.id == tx.accountId }) {
-                            account.currentBalance += tx.amount
-                        }
-                    }
                 }
             }
             .sheet(item: $editingRecurring) { rt in
@@ -208,6 +238,14 @@ struct PeriodDetailSheet: View {
                         editingOccurrenceRecurring: rt,
                         editingOccurrenceDate:      tx.date
                     )
+                }
+            }
+            .sheet(item: $editingPlannedTx) { tx in
+                RealTransactionEditSheet(
+                    transaction: tx,
+                    allAccounts: allAccounts
+                ) { newAmount, newDate, newNotes, newAccountId in
+                    updatePlannedTx(tx, newSignedAmount: newAmount, newDate: newDate, newNotes: newNotes, newAccountId: newAccountId)
                 }
             }
             .sheet(item: $editingRealTx) { tx in
@@ -236,7 +274,7 @@ struct PeriodDetailSheet: View {
 
     private func paidRow(_ tx: Transaction) -> some View {
         let isIncome = tx.amount > 0
-        let cat      = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
+        let cat      = tx.categoryId.flatMap { categoriesById[$0] }
         let logo     = recurring(for: tx)?.logo ?? ""
 
         return HStack(spacing: 12) {
@@ -281,7 +319,7 @@ struct PeriodDetailSheet: View {
 
     private func plannedRow(_ tx: Transaction) -> some View {
         let isIncome  = tx.amount > 0
-        let cat       = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
+        let cat       = tx.categoryId.flatMap { categoriesById[$0] }
         let rt        = recurring(for: tx)
         let state     = plannedState(for: tx)
         let today     = state == .today
@@ -385,16 +423,65 @@ struct PeriodDetailSheet: View {
 
     /// Supprime la transaction partenaire d'un transfert (l'autre côté de la même occurrence).
     private func deleteTransferPartner(of tx: Transaction) {
-        guard let rid = tx.recurringTransactionId else { return }
-        let cal   = Calendar.current
-        let txDay = cal.startOfDay(for: tx.date)
-        if let partner = allTransactions.first(where: {
-            $0.recurringTransactionId == rid &&
-            $0.id != tx.id &&
-            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay)
-        }) {
+        if let partner = transferPartner(of: tx) {
             context.delete(partner)
         }
+    }
+
+    private func transferPartner(of tx: Transaction) -> Transaction? {
+        let cal   = Calendar.current
+        let txDay = cal.startOfDay(for: tx.date)
+
+        if let rid = tx.recurringTransactionId {
+            return allTransactions.first(where: {
+                $0.recurringTransactionId == rid &&
+                $0.id != tx.id &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay)
+            })
+        }
+
+        if let destId = tx.transferDestinationAccountId {
+            return allTransactions.first(where: {
+                $0.id != tx.id &&
+                $0.isTransfer &&
+                $0.accountId == destId &&
+                cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay) &&
+                abs($0.amount) == abs(tx.amount)
+            })
+        }
+
+        return allTransactions.first(where: {
+            $0.id != tx.id &&
+            $0.isTransfer &&
+            $0.transferDestinationAccountId == tx.accountId &&
+            cal.isDate(cal.startOfDay(for: $0.date), inSameDayAs: txDay) &&
+            abs($0.amount) == abs(tx.amount)
+        })
+    }
+
+    private func markPlannedTxAsPaid(_ tx: Transaction) {
+        if tx.isTransfer {
+            guard let partner = transferPartner(of: tx) else { return }
+
+            tx.isPaid = true
+            partner.isPaid = true
+
+            allAccounts.first(where: { $0.id == tx.accountId })?.currentBalance += tx.amount
+            allAccounts.first(where: { $0.id == partner.accountId })?.currentBalance += partner.amount
+        } else {
+            tx.isPaid = true
+            allAccounts.first(where: { $0.id == tx.accountId })?.currentBalance += tx.amount
+        }
+
+        try? context.save()
+    }
+
+    private func updatePlannedTx(_ tx: Transaction, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
+        tx.amount    = newSignedAmount
+        tx.date      = newDate
+        tx.notes     = newNotes
+        tx.accountId = newAccountId
+        try? context.save()
     }
 
     private func updateRealTx(_ tx: Transaction, newSignedAmount: Decimal, newDate: Date, newNotes: String?, newAccountId: UUID) {
@@ -489,17 +576,39 @@ struct PeriodDetailSheet: View {
                         .font(.subheadline.weight(.medium)).foregroundStyle(.orange)
                 }
                 Divider()
+                if period.isCurrentPeriod {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Restant disponible")
+                                .font(.body.weight(.semibold))
+                            Text("Après transactions payées")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(CurrencyFormatter.shared.format(currentRunningBalance))
+                            .font(.body.weight(.bold))
+                            .foregroundStyle(runningBalanceColor)
+                    }
+                    Divider()
+                }
                 HStack {
-                    Text("Solde projeté").font(.body.weight(.semibold))
+                    Text("Solde projeté").font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
                     Text(CurrencyFormatter.shared.format(displayedProjectedBalance))
-                        .font(.body.weight(.bold))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(period.isTight ? amberColor : Color.indigo)
                 }
             }
             .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
         }
         .background(.regularMaterial)
+    }
+
+    private var runningBalanceColor: Color {
+        if currentRunningBalance < 0 { return .orange }
+        if currentRunningBalance < tightThreshold { return amberColor }
+        return .indigo
     }
 
     // MARK: - Helpers

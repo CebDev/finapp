@@ -135,6 +135,7 @@ enum CategoryService {
                 (name: "Loyer / Hypothèque", icon: "house.fill"),
                 (name: "Électricité",         icon: "bolt.fill"),
                 (name: "Assurance habitation",icon: "shield.fill"),
+                (name: "Taxes",icon: "dollarsign.circle.fill"),
             ]
         )
 
@@ -181,7 +182,7 @@ enum CategoryService {
 
         // MARK: 📦 Autre
         result.append(Category(
-            id: UUID(uuidString: "00000009-0000-0000-0000-000000000000")!,
+            id: UUID(uuidString: "0000000A-0000-0000-0000-000000000000")!,
             name: "Autre",
             icon: "square.grid.2x2.fill",
             color: "#98989D",
@@ -210,6 +211,27 @@ enum CategoryService {
             context.insert(category)
         }
         try? context.save()
+    }
+
+    /// Synchronise les catégories système par défaut avec la base existante.
+    /// Insère uniquement les catégories manquantes pour permettre l'ajout
+    /// progressif de nouvelles racines ou sous-catégories après le premier seed.
+    static func syncDefaultCategories(context: ModelContext) {
+        let descriptor = FetchDescriptor<Category>(
+            predicate: #Predicate { $0.isSystem }
+        )
+        let existingCategories = (try? context.fetch(descriptor)) ?? []
+        let existingIds = Set(existingCategories.map(\.id))
+
+        var didInsert = false
+        for category in defaultCategories() where !existingIds.contains(category.id) {
+            context.insert(category)
+            didInsert = true
+        }
+
+        if didInsert {
+            try? context.save()
+        }
     }
 
     // MARK: - Déduplication CloudKit

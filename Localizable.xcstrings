@@ -25,16 +25,6 @@
     "%lld" : {
 
     },
-    "%lld/%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld/%2$lld"
-          }
-        }
-      }
-    },
     "^[%lld occurrence](inflect: true)" : {
 
     },
@@ -839,6 +829,9 @@
     "Août" : {
 
     },
+    "Après transactions payées" : {
+
+    },
     "Aucun" : {
 
     },
@@ -1323,6 +1316,9 @@
     "Évolution" : {
 
     },
+    "Évolution du patrimoine" : {
+
+    },
     "Évolution sur 12 mois" : {
 
     },
@@ -1687,6 +1683,9 @@
     "Passifs" : {
 
     },
+    "Patrimoine" : {
+
+    },
     "Payée" : {
 
     },
@@ -1777,6 +1776,9 @@
     "Résilier cet abonnement" : {
 
     },
+    "Restant disponible" : {
+
+    },
     "Revenus" : {
 
     },
@@ -1793,6 +1795,9 @@
 
     },
     "Septembre" : {
+
+    },
+    "Série" : {
 
     },
     "Serrées seulement" : {

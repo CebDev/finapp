@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Charts
 
 struct AccountsView: View {
     @Query(sort: \Account.sortOrder) private var accounts: [Account]
@@ -119,6 +120,11 @@ struct AccountsView: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
 
                 AssetsLiabilitiesCard(assets: totalAssets, liabilities: totalLiabilities)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+
+                NetWorthEvolutionChart(accounts: accounts)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
@@ -396,6 +402,252 @@ extension AccountType {
         case .mortgage:   return "house.fill"
         case .investment: return "chart.line.uptrend.xyaxis"
         }
+    }
+}
+
+// MARK: - NetWorthEvolutionChart
+
+private struct NetWorthEvolutionChart: View {
+    /// Comptes passés depuis le parent (déjà queryés).
+    let accounts: [Account]
+
+    @Query private var transactions: [Transaction]
+
+    private let calendar = Calendar.current
+
+    private var today:      Date { calendar.startOfDay(for: .now) }
+    private var chartStart: Date { calendar.date(byAdding: .month, value: -1, to: today) ?? today }
+    private var chartEnd:   Date { calendar.date(byAdding: .month, value:  5, to: today) ?? today }
+
+    // MARK: - Cache allPoints (évite O(n_semaines × n_transactions) à chaque rendu)
+    @State private var cachedAllPoints: [WeekPoint] = []
+
+    private var cacheID: Int {
+        var h = Hasher()
+        h.combine(transactions.count)
+        for acc in accounts {
+            h.combine(acc.id.uuidString)
+            h.combine(acc.currentBalance.description)
+        }
+        return h.finalize()
+    }
+
+    /// Ancre : somme des currentBalance de tous les comptes non-archivés.
+    /// (currentBalance reflète déjà toutes les transactions payées appliquées.)
+    private var currentNetWorth: Decimal {
+        accounts.filter { !$0.isArchived }.reduce(0) { $0 + $1.currentBalance }
+    }
+
+    /// Patrimoine net estimé à une date donnée.
+    /// - Passé  : on défait les transactions payées survenues après cette date.
+    /// - Futur  : on accumule les transactions planifiées (non payées) jusqu'à cette date.
+    private func netWorth(at dayStart: Date) -> Decimal {
+        var worth = currentNetWorth
+        if dayStart < today {
+            for tx in transactions where tx.isPaid {
+                if calendar.startOfDay(for: tx.date) > dayStart { worth -= tx.amount }
+            }
+        } else if dayStart > today {
+            for tx in transactions where !tx.isPaid {
+                let txDay = calendar.startOfDay(for: tx.date)
+                if txDay > today && txDay <= dayStart { worth += tx.amount }
+            }
+        }
+        return worth
+    }
+
+    private struct WeekPoint: Identifiable {
+        let id     = UUID()
+        let date:   Date
+        let value:  Decimal
+        let isPast: Bool
+    }
+
+    /// Construit la série de points hebdomadaires — appelé uniquement quand les données changent.
+    private func buildAllPoints() -> [WeekPoint] {
+        var result: [WeekPoint] = []
+        var current = chartStart
+        while current <= chartEnd {
+            result.append(WeekPoint(
+                date:   current,
+                value:  netWorth(at: current),
+                isPast: current <= today
+            ))
+            guard let next = calendar.date(byAdding: .weekOfYear, value: 1, to: current) else { break }
+            current = next
+        }
+        if result.last.map({ $0.date < chartEnd }) ?? true {
+            result.append(WeekPoint(date: chartEnd, value: netWorth(at: chartEnd), isPast: false))
+        }
+        return result
+    }
+
+    private var allPoints: [WeekPoint] { cachedAllPoints }
+
+    /// Série passée + le premier point futur pour que les deux lignes se rejoignent.
+    private var pastSeries: [WeekPoint] {
+        let past   = allPoints.filter(\.isPast)
+        let bridge = allPoints.first { !$0.isPast }
+        return bridge.map { past + [$0] } ?? past
+    }
+
+    /// Série future + le dernier point passé pour que les deux lignes se rejoignent.
+    private var futureSeries: [WeekPoint] {
+        let future = allPoints.filter { !$0.isPast }
+        let bridge = allPoints.last(where: \.isPast)
+        return bridge.map { [$0] + future } ?? future
+    }
+
+    // MARK: Domaine Y — centré sur les données, pas sur 0
+
+    private var rawValues: [Double] {
+        allPoints.map { ($0.value as NSDecimalNumber).doubleValue }
+    }
+
+    private var yMin: Double {
+        let minVal = rawValues.min() ?? 0
+        let maxVal = rawValues.max() ?? 0
+        let range  = max(maxVal - minVal, 1)
+        if minVal <= 0 { return minVal - range * 0.10 }
+        return max(0, minVal - range * 0.20)
+    }
+
+    private var yMax: Double {
+        let maxVal = rawValues.max() ?? 0
+        let minVal = rawValues.min() ?? 0
+        let range  = max(maxVal - minVal, 1)
+        return maxVal + range * 0.20
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Évolution du patrimoine")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Chart {
+                // Aire sous la courbe complète
+                ForEach(allPoints) { pt in
+                    AreaMark(
+                        x: .value("Date",       pt.date),
+                        y: .value("Patrimoine", pt.value)
+                    )
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(LinearGradient(
+                        colors: [Color.indigo.opacity(0.18), Color.indigo.opacity(0.02)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                }
+
+                // Ligne passée — trait plein
+                ForEach(pastSeries) { pt in
+                    LineMark(
+                        x: .value("Date",       pt.date),
+                        y: .value("Patrimoine", pt.value),
+                        series: .value("Série", "passé")
+                    )
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.indigo)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
+
+                // Ligne future — trait pointillé
+                ForEach(futureSeries) { pt in
+                    LineMark(
+                        x: .value("Date",       pt.date),
+                        y: .value("Patrimoine", pt.value),
+                        series: .value("Série", "futur")
+                    )
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.indigo.opacity(0.50))
+                    .lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                }
+
+                // Points — passés (solides) et futurs (transparents)
+                ForEach(allPoints) { pt in
+                    PointMark(
+                        x: .value("Date",       pt.date),
+                        y: .value("Patrimoine", pt.value)
+                    )
+                    .foregroundStyle(pt.isPast ? Color.indigo : Color.indigo.opacity(0.40))
+                    .symbolSize(pt.isPast ? 36 : 22)
+                }
+
+                // Repère "Aujourd'hui"
+                RuleMark(x: .value("Aujourd'hui", today))
+                    .foregroundStyle(Color.indigo.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .annotation(position: .top, spacing: 2) {
+                        Text("Aujourd'hui")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.indigo)
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(Color.indigo.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+
+                if yMin < 0 {
+                    RuleMark(y: .value("Zéro", 0))
+                        .foregroundStyle(Color.secondary.opacity(0.25))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                }
+            }
+            .chartLegend(.hidden)
+            .chartYScale(domain: yMin...yMax)
+            .chartXScale(domain: chartStart...chartEnd)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .month, count: 1)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(monthLabel(date)).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    if let d = value.as(Decimal.self) {
+                        AxisGridLine().foregroundStyle(Color.secondary.opacity(0.10))
+                        AxisValueLabel {
+                            Text(shortAmount(d)).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(height: 160)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .onChange(of: cacheID, initial: true) { _, _ in cachedAllPoints = buildAllPoints() }
+    }
+
+    // MARK: Helpers
+
+    private static let monthFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale     = Locale(identifier: "fr_CA")
+        f.dateFormat = "MMM"
+        return f
+    }()
+
+    private func monthLabel(_ date: Date) -> String {
+        Self.monthFmt.string(from: date).replacingOccurrences(of: ".", with: "")
+    }
+
+    private func shortAmount(_ value: Decimal) -> String {
+        let absVal = Swift.abs(value)
+        if absVal >= 1_000 {
+            let k   = value / 1_000
+            let fmt = NumberFormatter()
+            fmt.maximumFractionDigits = 1
+            fmt.minimumFractionDigits = 0
+            fmt.locale = Locale(identifier: "fr_CA")
+            return (fmt.string(from: k as NSDecimalNumber) ?? "\(k)") + "k"
+        }
+        return CurrencyFormatter.shared.format(value)
     }
 }
 

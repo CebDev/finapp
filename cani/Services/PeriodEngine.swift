@@ -55,11 +55,6 @@ struct PeriodEngine {
         let calendar = Calendar.current
         let refDay   = calendar.startOfDay(for: referenceDate)
 
-        // Solde de départ = solde actuel des comptes (inclut déjà les transactions payées)
-        let startingBalance = accounts
-            .filter(\.includeInBudget)
-            .reduce(Decimal(0)) { $0 + $1.budgetContribution }
-
         let currentPeriodStart = periodStart(
             for: refDay,
             settings: settings,
@@ -68,8 +63,39 @@ struct PeriodEngine {
 
         let budgetAccountIds = Set(accounts.filter(\.includeInBudget).map(\.id))
 
+        // Solde de départ = solde actuel des comptes (inclut déjà toutes les transactions payées)
+        let currentBalance = accounts
+            .filter(\.includeInBudget)
+            .reduce(Decimal(0)) { $0 + $1.budgetContribution }
+
+        // Début de la première période générée (peut être avant la période courante,
+        // ex : evolutionPeriods démarre un jour avant le début de la période courante).
+        let (earliestPeriodStart, _) = bounds(
+            index: 0,
+            currentStart: currentPeriodStart,
+            targetDay: settings.periodStartDay,
+            frequency: settings.payPeriodFrequency,
+            calendar: calendar
+        )
+
+        // Reconstituer le solde d'ouverture de la première période en soustrayant
+        // toutes les transactions payées depuis son début — indépendamment du fait
+        // que referenceDate soit dans la période courante ou dans une période passée.
+        // Cela garantit que chaque période est ensuite projetée de façon homogène
+        // (payées et planifiées traitées identiquement dans la boucle ci-dessous).
+        let paidInWindow = transactions.filter {
+            budgetAccountIds.contains($0.accountId) &&
+            $0.isPaid &&
+            $0.date >= earliestPeriodStart
+        }
+        let totalPaidDelta = paidInWindow.reduce(Decimal(0)) { $0 + $1.amount }
+        let startingBalance = currentBalance - totalPaidDelta
+
         var result:         [PayPeriod] = []
         var runningBalance: Decimal     = startingBalance
+
+        // Référence temporelle réelle (indépendante de referenceDate qui peut être dans le passé)
+        let today = calendar.startOfDay(for: Date.now)
 
         for i in 0..<count {
             let (pStart, exclusiveEnd) = bounds(
@@ -84,40 +110,24 @@ struct PeriodEngine {
             var delta:      Decimal         = 0
             var dayAmounts: [Date: Decimal] = [:]
 
-            let isCurrentPeriodIteration = (i == 0)
-
-            // Transactions de cette période appartenant aux comptes budgétaires
+            // Toutes les transactions de la période pour l'affichage
             let periodTxs = transactions.filter {
                 budgetAccountIds.contains($0.accountId) &&
                 $0.date >= pStart &&
                 $0.date < exclusiveEnd
             }
 
-            if isCurrentPeriodIteration {
-                // Période courante :
-                // - Les transactions payées sont déjà dans currentBalance
-                //   → on les soustrait du runningBalance pour remonter au solde d'ouverture
-                //   → puis on les ré-intègre via delta pour que le chiffre soit correct dans PayPeriodCard
-                // - Les transactions futures (isPaid == false) sont projetées normalement
-                let paidTxs = periodTxs.filter(\.isPaid)
-                let paidDelta = paidTxs.reduce(Decimal(0)) { $0 + $1.amount }
-                runningBalance -= paidDelta
+            // Pour le calcul du solde : exclure les transactions non-payées dans le passé réel.
+            // Les transactions isPaid == true ont été soustraites du startingBalance ci-dessus
+            // et doivent être ré-intégrées ici. Les transactions futures non-payées (date > today)
+            // sont des projections légitimes. Les transactions non-payées avec une date passée
+            // (date <= today) ne sont pas encore dans currentBalance et ne le seront peut-être jamais —
+            // on les exclut pour éviter de sur-projeter.
+            let balanceTxs = periodTxs.filter { $0.isPaid || $0.date > today }
 
-                for tx in paidTxs {
-                    delta += tx.amount
-                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
-                }
-
-                for tx in periodTxs.filter({ !$0.isPaid }) {
-                    delta += tx.amount
-                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
-                }
-            } else {
-                // Périodes futures : toutes les transactions sont planifiées (isPaid == false)
-                for tx in periodTxs {
-                    delta += tx.amount
-                    dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
-                }
+            for tx in balanceTxs {
+                delta += tx.amount
+                dayAmounts[calendar.startOfDay(for: tx.date), default: 0] += tx.amount
             }
 
             let previous    = runningBalance

@@ -13,8 +13,8 @@ import Charts
 struct BalanceChartView: View {
     /// Tableau complet de périodes (typiquement 5-13 générées par PeriodEngine).
     let periods: [PayPeriod]
-    /// false → fenêtre J-2 à J+2 (5 périodes), axe Y masqué, hauteur 120 pt.
-    /// true  → toutes les périodes, axe Y visible, hauteur 220 pt.
+    /// false → fenêtre J-2 à J+2 (5 périodes), axe Y compact trailing, hauteur 180 pt.
+    /// true  → toutes les périodes, axe Y leading visible, hauteur 220 pt.
     var showFullYear: Bool = false
     /// Période à mettre en évidence (context de PeriodDetailSheet).
     /// Quand fourni, la fenêtre est réduite à [idx-1 … idx+1] et la hauteur passe à 100 pt.
@@ -34,6 +34,11 @@ struct BalanceChartView: View {
     @State private var scrubbedDate:    Date?   = nil
     @State private var scrubbedBalance: Double? = nil
 
+    // MARK: - Cache points graphique (évite le recalcul à chaque geste de scrubbing)
+
+    @State private var cachedChartPoints: [ChartPoint]    = []
+    @State private var balanceByDate:     [Date: Double]  = [:]
+
     // MARK: - Couleurs d'état
 
     private var softRedColor: Color { Color(red: 0.85, green: 0.28, blue: 0.28) }
@@ -43,37 +48,32 @@ struct BalanceChartView: View {
 
     /// Un point de données = solde à un instant précis dans le temps.
     private struct ChartPoint: Identifiable {
-        let id:             Date   // stable — pas de UUID recréé à chaque render
-        let date:           Date
-        let balance:        Double
-        let isTight:        Bool
-        let isNegative:     Bool
-        let isPeriodEnd:  Bool   // vrai sur le dernier jour de chaque période (pour les dots)
+        let id:          Date
+        let date:        Date
+        let balance:     Double
+        let isTight:     Bool
+        let isNegative:  Bool
+        let isPeriodEnd: Bool
     }
 
     /// Périodes visibles selon le mode actif.
     private var visiblePeriods: [PayPeriod] {
-        // Mode focusé : fenêtre [idx-1, idx, idx+1]
         if let focused = focusedPeriod {
             guard let idx = periods.firstIndex(where: { $0.id == focused.id }) else { return periods }
             let lo = max(0, idx - 1)
             let hi = min(periods.count - 1, idx + 1)
             return Array(periods[lo...hi])
         }
-        // Mode mini avec domaine personnalisé (Home): utiliser toutes les périodes passées.
         if miniXDomainOverride != nil { return periods }
-        // Mode plein année : tout
         if showFullYear { return periods }
-        // Mode mini : J-2 à J+2 centré sur la période courante
         guard let idx = periods.firstIndex(where: \.isCurrentPeriod) else { return periods }
         let lo = max(0, idx - 2)
         let hi = min(periods.count - 1, idx + 2)
         return Array(periods[lo...hi])
     }
 
-    /// Points de la courbe : un point par jour par période, calculé depuis `dailyBalances`.
-    /// Le premier jour de chaque période est marqué `isPeriodEnd` pour y placer un dot.
-    private var chartPoints: [ChartPoint] {
+    /// Construit les points de la courbe depuis `dailyBalances` (résultat mis en cache dans `cachedChartPoints`).
+    private func buildChartPoints() -> [ChartPoint] {
         let shown = visiblePeriods
         guard !shown.isEmpty else { return [] }
 
@@ -83,7 +83,6 @@ struct BalanceChartView: View {
         for period in shown {
             var daily = period.dailyBalances
 
-            // Appliquer l'override de solde d'ouverture sur la période focalisée
             if let override = overridePreviousBalance,
                let focused  = focusedPeriod,
                period.id    == focused.id,
@@ -97,11 +96,11 @@ struct BalanceChartView: View {
             for (idx, snapshot) in daily.enumerated() {
                 let bal = (snapshot.balance as NSDecimalNumber).doubleValue
                 pts.append(ChartPoint(
-                    id:            snapshot.date,
-                    date:          snapshot.date,
-                    balance:       bal,
-                    isTight:       bal < thresholdDouble && bal >= 0,
-                    isNegative:    bal < 0,
+                    id:          snapshot.date,
+                    date:        snapshot.date,
+                    balance:     bal,
+                    isTight:     bal < thresholdDouble && bal >= 0,
+                    isNegative:  bal < 0,
                     isPeriodEnd: idx == daily.count - 1
                 ))
             }
@@ -110,8 +109,30 @@ struct BalanceChartView: View {
         return pts
     }
 
+    /// Identifiant de cache : change quand les données du graphique changent.
+    private var chartHash: Int {
+        var h = Hasher()
+        h.combine(periods.count)
+        h.combine(focusedPeriod?.id)
+        h.combine(overridePreviousBalance?.description)
+        for p in periods {
+            h.combine(p.id)
+            h.combine(p.projectedBalance.description)
+        }
+        return h.finalize()
+    }
+
+    /// Reconstruit le cache des points et du lookup de solde par date.
+    private func rebuildChartCache() {
+        let pts = buildChartPoints()
+        cachedChartPoints = pts
+        let cal = Calendar.current
+        balanceByDate = pts.reduce(into: [Date: Double]()) { dict, pt in
+            dict[cal.startOfDay(for: pt.date)] = pt.balance
+        }
+    }
+
     /// Domaine X forcé pour le mode mini.
-    /// Priorité: `miniXDomainOverride` (si fourni), sinon fenêtre symétrique autour de la période courante.
     private var miniXDomain: ClosedRange<Date> {
         if let override = miniXDomainOverride {
             return override
@@ -122,22 +143,20 @@ struct BalanceChartView: View {
             let end   = cal.date(byAdding: .day, value: +14, to: current.endDate)   ?? current.endDate
             return start...end
         }
-        // Fallback : bornes des données visibles
-        if let first = chartPoints.first?.date, let last = chartPoints.last?.date {
+        if let first = cachedChartPoints.first?.date, let last = cachedChartPoints.last?.date {
             return first...last
         }
         return Date.distantPast...Date.distantFuture
     }
 
-    private var periodStartPoints: [ChartPoint] { chartPoints.filter(\.isPeriodEnd) }
+    private var periodEndPoints: [ChartPoint] { cachedChartPoints.filter(\.isPeriodEnd) }
 
     private var yRange: (min: Double, max: Double) {
-        let vals = chartPoints.map(\.balance)
+        let vals = cachedChartPoints.map(\.balance)
         return (vals.min() ?? 0, vals.max() ?? 1)
     }
 
-    /// Domaine Y serré autour des données pour maximiser la lisibilité des variations.
-    /// Ajoute 15 % de marge en haut et en bas.
+    /// Domaine Y serré autour des données. Marge 15 % haut + bas.
     private var tightYDomain: ClosedRange<Double> {
         let (lo, hi) = yRange
         let range = max(hi - lo, 1)
@@ -145,27 +164,35 @@ struct BalanceChartView: View {
         return (lo - pad)...(hi + pad)
     }
 
+    private var tightThresholdDouble: Double {
+        Double(NSDecimalNumber(decimal: tightThreshold).doubleValue)
+    }
+
     // MARK: - Body
 
     var body: some View {
-        if focusedPeriod != nil {
-            buildChart()
-                .chartYAxis(.hidden)
-                .frame(height: 100)
-        } else if showFullYear {
-            buildChart()
-                .chartYAxis { yAxisContent }
-                .frame(height: 220)
-                .clipped()
-        } else {
-            buildChart()
-                .chartXScale(domain: miniXDomain)
-                .chartYAxis(.hidden)
-                .chartPlotStyle { plot in
-                    plot.padding(.top, todayBalance != nil ? 44 : 0)
-                }
-                .frame(height: 120)
+        Group {
+            if focusedPeriod != nil {
+                buildChart()
+                    .chartYAxis(.hidden)
+                    .frame(height: 100)
+            } else if showFullYear {
+                buildChart()
+                    .chartYAxis { yAxisContent }
+                    .frame(height: 220)
+                    .clipped()
+            } else {
+                // Mode mini : hauteur augmentée + axe Y compact à droite
+                buildChart()
+                    .chartXScale(domain: miniXDomain)
+                    .chartYAxis { yAxisContentMini }
+                    .chartPlotStyle { plot in
+                        plot.padding(.top, todayBalance != nil ? 36 : 8)
+                    }
+                    .frame(height: 180)
+            }
         }
+        .onChange(of: chartHash, initial: true) { _, _ in rebuildChartCache() }
     }
 
     // MARK: - Chart builder
@@ -173,6 +200,8 @@ struct BalanceChartView: View {
     @ViewBuilder
     private func buildChart() -> some View {
         Chart {
+            tightThresholdRule()
+            periodSeparators()
             focusedHighlight()
             areaMarks()
             lineMarks()
@@ -208,30 +237,22 @@ struct BalanceChartView: View {
     // MARK: - Interpolation de solde
 
     private func balance(at date: Date) -> Double? {
-        let cal = Calendar.current
-        let day = cal.startOfDay(for: date)
-        // Correspondance exacte au jour — données journalières disponibles
-        if let pt = chartPoints.first(where: { cal.isDate($0.date, inSameDayAs: day) }) {
-            return pt.balance
-        }
-        // Hors plage : clamp sur les bornes
-        let sorted = chartPoints
-        guard !sorted.isEmpty else { return nil }
-        if day < sorted.first!.date { return sorted.first!.balance }
-        return sorted.last!.balance
+        let day = Calendar.current.startOfDay(for: date)
+        // O(1) via dictionnaire précalculé
+        if let val = balanceByDate[day] { return val }
+        guard !cachedChartPoints.isEmpty else { return nil }
+        if day < cachedChartPoints.first!.date { return cachedChartPoints.first!.balance }
+        return cachedChartPoints.last!.balance
     }
 
     // MARK: - Gradient vert / amber / rouge
 
     /// Calcule les stops du gradient Y mappé sur le domaine des données.
-    /// `opaque: true`  → ligne (couleurs pleines)
-    /// `opaque: false` → aire (couleurs opaques réduites, fondues vers le bas)
     private func makeGradientStops(opaque: Bool) -> [Gradient.Stop] {
         let (yMin, yMax) = yRange
         let range = yMax - yMin
-        let t = Double(NSDecimalNumber(decimal: tightThreshold).doubleValue)
+        let t = tightThresholdDouble
 
-        // Position 0 = haut du graphique (yMax), 1 = bas (yMin)
         func pos(_ v: Double) -> CGFloat { CGFloat(max(0, min(1, (yMax - v) / range))) }
         func stop(_ c: Color, _ alpha: Double, _ loc: CGFloat) -> Gradient.Stop {
             .init(color: opaque ? c : c.opacity(alpha), location: loc)
@@ -239,34 +260,32 @@ struct BalanceChartView: View {
 
         guard range > 0.01 else {
             let c: Color = yMax < 0 ? softRedColor : yMax < t ? amberColor : .green
-            return [stop(c, 0.30, 0), stop(c, opaque ? 1.0 : 0.04, 1)]
+            return [stop(c, 0.42, 0), stop(c, opaque ? 1.0 : 0.06, 1)]
         }
 
         let tPos    = pos(t)
         let zeroPos = pos(0.0)
         var stops: [Gradient.Stop] = []
 
-        // Haut → seuil tight
         if yMax >= t {
-            stops.append(stop(.green,    0.30, 0))
+            stops.append(stop(.green, 0.42, 0))
             if tPos > 0.01 {
-                stops.append(stop(.green,     0.18, max(0, tPos - 0.005)))
-                stops.append(stop(amberColor, 0.28, tPos))
+                stops.append(stop(.green,     0.22, max(0, tPos - 0.005)))
+                stops.append(stop(amberColor, 0.35, tPos))
             }
         } else if yMax >= 0 {
-            stops.append(stop(amberColor, 0.28, 0))
+            stops.append(stop(amberColor, 0.35, 0))
         } else {
-            stops.append(stop(softRedColor, 0.30, 0))
+            stops.append(stop(softRedColor, 0.40, 0))
         }
 
-        // Franchissement de zéro
         if yMin < 0 && yMax > 0 && zeroPos > 0.01 && zeroPos < 0.99 {
-            stops.append(stop(amberColor,   0.18, max(0, zeroPos - 0.005)))
-            stops.append(stop(softRedColor, 0.35, zeroPos))
-            stops.append(stop(softRedColor, 0.08, 1.0))
+            stops.append(stop(amberColor,   0.22, max(0, zeroPos - 0.005)))
+            stops.append(stop(softRedColor, 0.40, zeroPos))
+            stops.append(stop(softRedColor, 0.10, 1.0))
         } else {
             let bot: Color = yMin < 0 ? softRedColor : yMin < t ? amberColor : .green
-            stops.append(stop(bot, opaque ? 1.0 : 0.04, 1.0))
+            stops.append(stop(bot, opaque ? 1.0 : 0.06, 1.0))
         }
 
         return stops
@@ -281,6 +300,30 @@ struct BalanceChartView: View {
     }
 
     // MARK: - Chart content builders
+
+    /// Ligne horizontale pointillée au seuil « tight » — visible si le seuil est dans la plage Y.
+    @ChartContentBuilder
+    private func tightThresholdRule() -> some ChartContent {
+        let t = tightThresholdDouble
+        let (yMin, yMax) = yRange
+        if t > yMin && t < yMax {
+            RuleMark(y: .value("Seuil", t))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .foregroundStyle(amberColor.opacity(0.50))
+        }
+    }
+
+    /// Règles verticales subtiles aux jonctions de périodes (hors mode focusé).
+    @ChartContentBuilder
+    private func periodSeparators() -> some ChartContent {
+        if focusedPeriod == nil {
+            ForEach(visiblePeriods.dropFirst()) { period in
+                RuleMark(x: .value("Début", period.startDate))
+                    .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [2, 5]))
+                    .foregroundStyle(Color.primary.opacity(0.13))
+            }
+        }
+    }
 
     /// Fond indigo sur la plage de la période focalisée.
     @ChartContentBuilder
@@ -301,7 +344,7 @@ struct BalanceChartView: View {
     @ChartContentBuilder
     private func areaMarks() -> some ChartContent {
         let yMin = tightYDomain.lowerBound
-        ForEach(chartPoints) { pt in
+        ForEach(cachedChartPoints) { pt in
             AreaMark(
                 x:      .value("Date",  pt.date),
                 yStart: .value("Bas",   yMin),
@@ -314,39 +357,50 @@ struct BalanceChartView: View {
 
     @ChartContentBuilder
     private func lineMarks() -> some ChartContent {
-        ForEach(chartPoints) { pt in
+        ForEach(cachedChartPoints) { pt in
             LineMark(
                 x: .value("Date",  pt.date),
                 y: .value("Solde", pt.balance)
             )
             .interpolationMethod(.monotone)
             .foregroundStyle(lineGradient())
-            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
         }
     }
 
+    /// Dots de fin de période : halo blanc + point coloré pour ressortir sur la courbe.
+    /// Deux ForEach séparés car @ChartContentBuilder n'accepte pas plusieurs marks dans un seul.
     @ChartContentBuilder
     private func statusPointMarks() -> some ChartContent {
-        ForEach(periodStartPoints) { pt in
+        // Halo blanc (arrière-plan)
+        ForEach(periodEndPoints) { pt in
+            PointMark(
+                x: .value("Date",  pt.date),
+                y: .value("Solde", pt.balance)
+            )
+            .foregroundStyle(Color(UIColor.systemBackground))
+            .symbolSize(110)
+            .symbol(.circle)
+        }
+        // Point coloré (avant-plan)
+        ForEach(periodEndPoints) { pt in
             let dotColor: Color = pt.isNegative ? softRedColor : pt.isTight ? amberColor : .green
             PointMark(
                 x: .value("Date",  pt.date),
                 y: .value("Solde", pt.balance)
             )
             .foregroundStyle(dotColor)
-            .symbolSize(45)
+            .symbolSize(60)
             .symbol(.circle)
         }
     }
 
-    /// Ligne verticale « Aujourd'hui » — présente dans tous les graphiques.
-    /// Affiche un badge date + solde si `todayBalance` est fourni, sinon « Aujourd'hui » en mode plein.
-    /// Le badge est masqué quand le scrubbing est actif.
+    /// Ligne verticale « Aujourd'hui ».
     @ChartContentBuilder
     private func todayRule() -> some ChartContent {
         RuleMark(x: .value("Aujourd'hui", Date.now))
             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            .foregroundStyle(Color.secondary.opacity(0.6))
+            .foregroundStyle(Color.primary.opacity(0.30))
             .annotation(position: .top, alignment: .center, spacing: 4) {
                 if scrubbedDate == nil {
                     if let balance = todayBalance {
@@ -383,44 +437,53 @@ struct BalanceChartView: View {
     @ViewBuilder
     private func todayBadge(balance: Decimal) -> some View {
         chartBadge(
-            day: Calendar.current.component(.day,   from: .now),
-            month: Calendar.current.component(.month, from: .now),
+            label:            formattedShortDate(.now),
             formattedBalance: CurrencyFormatter.shared.format(balance),
-            accentColor: Color.primary.opacity(0.10)
+            accentColor:      Color.primary.opacity(0.12)
         )
     }
 
     @ViewBuilder
     private func scrubbingBadge(date: Date, balance: Double) -> some View {
         chartBadge(
-            day: Calendar.current.component(.day,   from: date),
-            month: Calendar.current.component(.month, from: date),
+            label:            formattedShortDate(date),
             formattedBalance: CurrencyFormatter.shared.format(Decimal(balance)),
-            accentColor: Color.indigo.opacity(0.25)
+            accentColor:      Color.indigo.opacity(0.25)
         )
     }
 
     @ViewBuilder
-    private func chartBadge(day: Int, month: Int, formattedBalance: String, accentColor: Color) -> some View {
+    private func chartBadge(label: String, formattedBalance: String, accentColor: Color) -> some View {
         VStack(spacing: 1) {
-            Text("\(day)/\(month)")
+            Text(label)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
             Text(formattedBalance)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.75)
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(Color(UIColor.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 7)
                 .stroke(accentColor, lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.10), radius: 4, x: 0, y: 1)
+        .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
+    }
+
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale     = Locale(identifier: "fr_CA")
+        f.dateFormat = "d MMM"
+        return f
+    }()
+
+    private func formattedShortDate(_ date: Date) -> String {
+        Self.shortDateFormatter.string(from: date).replacingOccurrences(of: ".", with: "")
     }
 
     // MARK: - Axes
@@ -431,14 +494,36 @@ struct BalanceChartView: View {
                 .foregroundStyle(Color.primary.opacity(0.08))
             AxisValueLabel {
                 if let date = value.as(Date.self) {
-                    Text(
-                        date,
-                        format: Date.FormatStyle()
-                            .locale(Locale(identifier: "fr_CA"))
-                            .month(.abbreviated)
-                    )
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    if showFullYear {
+                        Text(
+                            date,
+                            format: Date.FormatStyle()
+                                .locale(Locale(identifier: "fr_CA"))
+                                .month(.abbreviated)
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    } else {
+                        // Mode mini : jour + mois abrégé pour une meilleure orientation temporelle
+                        Text(formattedShortDate(date))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Axe Y compact (trailing) pour le mode mini — donne l'échelle sans encombrer.
+    private var yAxisContentMini: some AxisContent {
+        AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                .foregroundStyle(Color.primary.opacity(0.06))
+            AxisValueLabel(anchor: .leading) {
+                if let d = value.as(Double.self) {
+                    Text(abbreviatedCAD(d))
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary.opacity(0.75))
                 }
             }
         }
@@ -510,11 +595,16 @@ struct BalanceChartView: View {
     return VStack(spacing: 24) {
         VStack(alignment: .leading, spacing: 6) {
             Text("Mini (5 périodes)").font(.caption).foregroundStyle(.secondary)
-            BalanceChartView(periods: periods, showFullYear: false)
+            BalanceChartView(
+                periods:             periods,
+                showFullYear:        false,
+                tightThreshold:      500,
+                todayBalance:        3_200
+            )
         }
         VStack(alignment: .leading, spacing: 6) {
             Text("Pleine année").font(.caption).foregroundStyle(.secondary)
-            BalanceChartView(periods: periods, showFullYear: true)
+            BalanceChartView(periods: periods, showFullYear: true, tightThreshold: 500)
         }
         VStack(alignment: .leading, spacing: 6) {
             Text("Focalisé (sheet)").font(.caption).foregroundStyle(.secondary)

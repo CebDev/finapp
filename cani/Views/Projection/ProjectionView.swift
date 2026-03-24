@@ -18,6 +18,9 @@ struct ProjectionView: View {
     @State private var showingSetupConfirmation:  Bool       = false
     @State private var showingPeriodSetup:        Bool       = false
 
+    // MARK: - Cache périodes
+    @State private var cachedPeriods: [PayPeriod] = []
+
     // MARK: - Computed
 
     private var settings: UserSettings? { settingsArray.first }
@@ -26,15 +29,19 @@ struct ProjectionView: View {
         accounts.filter(\.includeInBudget).reduce(0) { $0 + $1.effectiveBalance }
     }
 
-    private var allPeriods: [PayPeriod] {
-        guard let s = settings else { return [] }
-        return PeriodEngine.generate(
-            settings:          s,
-            accounts:          accounts,
-            transactions:      allTransactions,
-            count:             13,
-            dailySamplingStep: 2
-        )
+    /// 13 périodes — résultat du cache mis à jour par .task(id: periodsTaskID).
+    private var allPeriods: [PayPeriod] { cachedPeriods }
+
+    /// Identifiant de cache bon marché.
+    private var periodsTaskID: Int {
+        var h = Hasher()
+        h.combine(allTransactions.count)
+        for acc in accounts {
+            h.combine(acc.id.uuidString)
+            h.combine(acc.currentBalance.description)
+        }
+        h.combine(settingsArray.count)
+        return h.finalize()
     }
 
     private var filteredPeriods: [PayPeriod] {
@@ -97,6 +104,16 @@ struct ProjectionView: View {
             }
             .sheet(isPresented: $showingPeriodSetup) {
                 PeriodSetupSheet()
+            }
+            .task(id: periodsTaskID) {
+                guard let s = settingsArray.first else { return }
+                cachedPeriods = PeriodEngine.generate(
+                    settings:          s,
+                    accounts:          accounts,
+                    transactions:      allTransactions,
+                    count:             13,
+                    dailySamplingStep: 2
+                )
             }
             .confirmationDialog(
                 "Avez-vous créé tous les comptes à suivre avec leur solde initial ?",

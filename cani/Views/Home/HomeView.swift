@@ -36,6 +36,11 @@ struct HomeView: View {
     @State private var markingAsPaidDate:   Date                  = Date()
     @State private var selectedAccount:     Account? = nil
 
+    // MARK: - Cache périodes (calcul asynchrone)
+    @State private var cachedPeriods:          [PayPeriod]         = []
+    @State private var cachedEvolutionPeriods: [PayPeriod]         = []
+    @State private var cachedUpcomingOps:      [UpcomingOperation] = []
+
     // MARK: - Computed
 
     private var totalBalance: Decimal {
@@ -47,31 +52,36 @@ struct HomeView: View {
 
     private var settings: UserSettings? { settingsArray.first }
 
-    /// 5 périodes à partir de la période courante (pour chart + cards).
-    private var allPeriods: [PayPeriod] {
-        guard let s = settings else { return [] }
-        return PeriodEngine.generate(
-            settings:     s,
-            accounts:     accounts,
-            transactions: allTransactions,
-            count:        5
-        )
+    /// 5 périodes — résultat du cache mis à jour par .task(id: periodsTaskID).
+    private var allPeriods: [PayPeriod] { cachedPeriods }
+
+    /// Fenêtre du graphique Évolution — résultat du cache.
+    private var evolutionPeriods: [PayPeriod] { cachedEvolutionPeriods }
+
+    /// Identifiant de cache bon marché : change quand les données sources changent.
+    private var periodsTaskID: Int {
+        var h = Hasher()
+        h.combine(allTransactions.count)
+        h.combine(allPastTransactions.count) // couvre les changements isPaid
+        h.combine(allRecurring.count)
+        h.combine(allCategories.count)
+        for acc in accounts {
+            h.combine(acc.id.uuidString)
+            h.combine(acc.currentBalance.description)
+        }
+        h.combine(settingsArray.count)
+        return h.finalize()
     }
 
-    /// Fenêtre du graphique Évolution : 1 période avant + période courante + 3 périodes après = 5.
-    private var evolutionPeriods: [PayPeriod] {
-        guard let s = settings else { return [] }
-        // On recule d'un jour avant le début de la période courante pour que PeriodEngine
-        // ancre la génération sur la période précédente.
-        let currentStart  = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
-        let dayBefore     = Calendar.current.date(byAdding: .day, value: -1, to: currentStart) ?? currentStart
-        return PeriodEngine.generate(
-            settings:      s,
-            accounts:      accounts,
-            transactions:  allTransactions,
-            count:         5,
-            referenceDate: dayBefore
-        )
+    /// Lookups O(1) — construits une fois par rendu, évitent le O(n²) dans les listes.
+    private var categoriesById: [UUID: Category] {
+        Dictionary(uniqueKeysWithValues: allCategories.map { ($0.id, $0) })
+    }
+    private var recurringById: [UUID: RecurringTransaction] {
+        Dictionary(uniqueKeysWithValues: allRecurring.map { ($0.id, $0) })
+    }
+    private var accountsById: [UUID: Account] {
+        Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
     }
 
     private var evolutionXDomain: ClosedRange<Date> {
@@ -230,6 +240,31 @@ struct HomeView: View {
                     heroAppeared = true
                 }
             }
+            .task(id: periodsTaskID) {
+                guard let s = settingsArray.first else { return }
+                cachedPeriods = PeriodEngine.generate(
+                    settings:     s,
+                    accounts:     accounts,
+                    transactions: allTransactions,
+                    count:        5
+                )
+                let currentStart = PeriodEngine.currentPeriodStart(settings: s, referenceDate: .now)
+                let dayBefore    = Calendar.current.date(byAdding: .day, value: -1, to: currentStart) ?? currentStart
+                cachedEvolutionPeriods = PeriodEngine.generate(
+                    settings:      s,
+                    accounts:      accounts,
+                    transactions:  allTransactions,
+                    count:         5,
+                    referenceDate: dayBefore
+                )
+                cachedUpcomingOps = UpcomingOperationsService.next(
+                    5,
+                    from:        allTransactions,
+                    categories:  allCategories,
+                    recurringTx: allRecurring,
+                    accounts:    accounts
+                )
+            }
         }
     }
 
@@ -330,7 +365,7 @@ struct HomeView: View {
                 emptyAccountsView
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    LazyHStack(spacing: 12) {
                         ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
                             CompactAccountCard(account: account)
                                 .opacity(heroAppeared ? 1 : 0)
@@ -450,12 +485,12 @@ struct HomeView: View {
     }
 
     private func recentTransactionRow(_ tx: Transaction) -> some View {
-        let isIncome   = tx.amount > 0
-        let isTransfer = tx.isTransfer
-        let cat        = tx.categoryId.flatMap { id in allCategories.first { $0.id == id } }
-        let logo       = recurringFor(tx)?.logo ?? ""
-        let label      = recentTransactionLabel(tx)
-        let accountName = accounts.first(where: { $0.id == tx.accountId })?.name ?? ""
+        let isIncome    = tx.amount > 0
+        let isTransfer  = tx.isTransfer
+        let cat         = tx.categoryId.flatMap { categoriesById[$0] }
+        let logo        = tx.recurringTransactionId.flatMap { recurringById[$0] }?.logo ?? ""
+        let label       = recentTransactionLabel(tx)
+        let accountName = accountsById[tx.accountId]?.name ?? ""
 
         return HStack(spacing: 12) {
             // Icône
@@ -523,17 +558,15 @@ struct HomeView: View {
 
     private func recentTransactionLabel(_ tx: Transaction) -> String {
         if tx.isTransfer {
-            let destName = tx.transferDestinationAccountId
-                .flatMap { id in accounts.first { $0.id == id } }?.name
+            let destName = tx.transferDestinationAccountId.flatMap { accountsById[$0] }?.name
             return destName.map { "Transfert → \($0)" } ?? "Transfert"
         }
         if !tx.name.isEmpty { return tx.name }
-        if let recurId = tx.recurringTransactionId,
-           let rt = allRecurring.first(where: { $0.id == recurId }) {
+        if let recurId = tx.recurringTransactionId, let rt = recurringById[recurId] {
             return rt.name
         }
         if let notes = tx.notes, !notes.isEmpty { return notes }
-        if let cat = tx.categoryId.flatMap({ id in allCategories.first { $0.id == id } }) { return cat.name }
+        if let cat = tx.categoryId.flatMap({ categoriesById[$0] }) { return cat.name }
         return tx.amount > 0 ? "Revenu" : "Dépense"
     }
 
@@ -555,29 +588,22 @@ struct HomeView: View {
         recurringFor(op.transaction)
     }
 
-    /// Récurrence parente d'une Transaction.
+    /// Récurrence parente d'une Transaction — O(1) via lookup dict.
     private func recurringFor(_ tx: Transaction) -> RecurringTransaction? {
         guard let rid = tx.recurringTransactionId else { return nil }
-        return allRecurring.first { $0.id == rid }
+        return recurringById[rid]
     }
 
     // MARK: - Prochaines opérations section
 
     private var upcomingOperationsSection: some View {
-        let ops = UpcomingOperationsService.next(
-            5,
-            from:        allTransactions,
-            categories:  allCategories,
-            recurringTx: allRecurring,
-            accounts:    accounts
-        )
-        return VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             Text("Prochaines opérations")
                 .font(.headline)
                 .padding(.leading, 16)
                 .padding(.bottom, 8)
 
-            if ops.isEmpty {
+            if cachedUpcomingOps.isEmpty {
                 Text("Aucune opération planifiée")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -585,14 +611,14 @@ struct HomeView: View {
                     .padding(.vertical, 12)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(ops) { op in
+                    ForEach(cachedUpcomingOps) { op in
                         UpcomingOperationRow(operation: op)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 menuTargetOp  = op
                                 showingOpMenu = true
                             }
-                        if op.id != ops.last?.id {
+                        if op.id != cachedUpcomingOps.last?.id {
                             Divider()
                                 .padding(.leading, 68)
                         }
